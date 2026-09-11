@@ -1,0 +1,162 @@
+name: Mirror upstream
+
+# Keeps this fork's branches and tags in step with pingdotgg/t3code, then
+# builds Linux packages for any upstream tag that has no release here yet.
+#
+# The build runs as a called workflow rather than a dispatched one on purpose:
+# a workflow_dispatch fired with GITHUB_TOKEN does not start a new run, so
+# splitting these into two triggers would silently never build anything.
+
+on:
+  schedule:
+    # Upstream cuts several nightlies a day. Half-hourly polling picks each
+    # stable tag up quickly without turning nightlies into a build every run,
+    # since only the newest unbuilt nightly is ever selected below.
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync refs and pick tags
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      stable_tag: ${{ steps.pick.outputs.stable_tag }}
+      nightly_tag: ${{ steps.pick.outputs.nightly_tag }}
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          # Persisted so the git push steps below reuse these credentials.
+          # MIRROR_SYNC_TOKEN is a PAT with the `workflow` scope: the built-in
+          # GITHUB_TOKEN may never create or update .github/workflows/ files,
+          # and upstream tags point at commits that carry those files, so
+          # pushing tags fails without it. Falls back to GITHUB_TOKEN, which is
+          # enough to merge main when no workflow files change.
+          token: ${{ secrets.MIRROR_SYNC_TOKEN || github.token }}
+          persist-credentials: true
+
+      - name: Merge upstream into main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/pingdotgg/t3code || \
+            git remote set-url upstream https://github.com/pingdotgg/t3code
+          # Only main is ever merged; fetching it explicitly avoids pulling down
+          # every upstream feature branch. Tags are still fetched in full because
+          # the next step mirrors all of them.
+          git fetch upstream +refs/heads/main:refs/remotes/upstream/main --tags
+
+          # Everything this fork adds lives in files upstream does not have -
+          # .github/workflows/mirror-*, .github/scripts/, mirror-patches/, MIRROR.md -
+          # so this merge is conflict-free by construction. Changes to upstream
+          # source are carried as patches applied at build time instead, which
+          # is what keeps that true. A conflict here means someone edited an
+          # upstream file on main; say so plainly rather than pushing a
+          # half-merged tree.
+          if ! git merge --no-edit upstream/main; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            git merge --abort
+            echo "Merging upstream/main conflicted in:" >&2
+            echo "$conflicts" >&2
+            echo "Nothing on main should touch upstream files; move that change into mirror-patches/ instead. See MIRROR.md." >&2
+            exit 1
+          fi
+          git push origin main
+
+      - name: Mirror upstream tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          # One push for every tag. Git negotiates refs first, so only tags the
+          # fork does not already have actually transfer - there is no cost to
+          # re-listing the full set each run. Without --force the push is
+          # non-atomic and non-fast-forward: a tag upstream re-cut is rejected
+          # (flagged, not silently overwritten) while every other tag still
+          # goes through, so one moved ref never freezes the mirror. The newest
+          # unbuilt tag is picked below regardless.
+          if ! git push origin --tags; then
+            echo "::warning::Some tags were rejected on push (likely re-cut upstream); see log above."
+          fi
+
+      - id: pick
+        name: Pick tags that have no release here
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Read the whole sorted list and take the first element rather than
+          # piping into `head`: with hundreds of tags `head` closes the pipe
+          # after one line, `git tag` dies with SIGPIPE (141), and pipefail
+          # turns that into a step failure. Reading it all avoids the broken
+          # pipe entirely. `|| true` keeps a channel with no matching tag from
+          # aborting under set -e.
+          #
+          # Only bare vX.Y.Z is stable. Anything with a suffix (-nightly, but
+          # also -rc/-beta if upstream ever cuts one) must not be published with
+          # --latest.
+          mapfile -t stable_tags < <(git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          latest_stable="${stable_tags[0]:-}"
+          # Nightly tags sort by their embedded date and run number, which
+          # v:refname orders correctly, but creation order is what upstream
+          # actually published in.
+          mapfile -t nightly_tags < <(git tag -l 'v*-nightly.*' --sort=-creatordate)
+          latest_nightly="${nightly_tags[0]:-}"
+
+          # Only the newest of each channel is ever built. Upstream publishes
+          # nightlies faster than four packages can be built, and nobody wants
+          # yesterday's nightly rebuilt to catch up.
+          for channel in stable nightly; do
+            tag_var="latest_$channel"
+            tag="${!tag_var:-}"
+            if [[ -z "$tag" ]]; then
+              echo "${channel}_tag=" >> "$GITHUB_OUTPUT"
+              continue
+            fi
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "$tag already released here; skipping."
+              echo "${channel}_tag=" >> "$GITHUB_OUTPUT"
+            else
+              echo "$tag needs Linux packages."
+              echo "${channel}_tag=$tag" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
+  build_stable:
+    name: Stable
+    needs: [sync]
+    if: needs.sync.outputs.stable_tag != ''
+    uses: ./.github/workflows/mirror-linux-build.yml
+    # A called workflow's token is capped by the caller job's grant, so the
+    # build's preflight job cannot get issues:write from its own block alone.
+    # Without it here, a stale patch on the scheduled path fails to file its
+    # issue (403) and the 3am notification never arrives.
+    permissions:
+      contents: write
+      issues: write
+    with:
+      tag: ${{ needs.sync.outputs.stable_tag }}
+
+  build_nightly:
+    name: Nightly
+    needs: [sync]
+    if: needs.sync.outputs.nightly_tag != ''
+    uses: ./.github/workflows/mirror-linux-build.yml
+    permissions:
+      contents: write
+      issues: write
+    with:
+      tag: ${{ needs.sync.outputs.nightly_tag }}

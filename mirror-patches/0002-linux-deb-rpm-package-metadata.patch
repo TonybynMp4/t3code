@@ -1,0 +1,30 @@
+diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
+index 44d5f0ab1..4c046b309 100644
+--- a/scripts/build-desktop-artifact.ts
++++ b/scripts/build-desktop-artifact.ts
+@@ -944,6 +944,7 @@ interface StagePackageJson {
+   readonly packageManager: string;
+   readonly description: string;
+   readonly author: string;
++  readonly homepage: string;
+   readonly main: string;
+   readonly build: Record<string, unknown>;
+   readonly dependencies: Record<string, unknown>;
+@@ -2761,6 +2762,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+       executableName: "t3code",
+       icon: "icons",
+       category: "Development",
++      maintainer: "T3 Tools <97451137+TonybynMp4@users.noreply.github.com>",
+       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
+       // in the .desktop entry (Exec already gets %U), so browsers can hand
+       // t3code:// OAuth callbacks to the app.
+@@ -3774,7 +3776,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+     private: true,
+     packageManager: rootPackageJson.packageManager,
+     description: "T3 Code desktop build",
+-    author: "T3 Tools",
++    author: "T3 Tools <97451137+TonybynMp4@users.noreply.github.com>",
++    homepage: "https://github.com/TonybynMp4/t3code",
+     main: "apps/desktop/dist-electron/main.cjs",
+     build: yield* createBuildConfig(
+       options.platform,

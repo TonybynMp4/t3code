@@ -1,0 +1,398 @@
+name: Mirror Linux build
+
+# Builds .deb and .rpm for x64 and arm64 from an upstream tag and publishes
+# them as a release on this fork. Upstream's own release workflow ships a Linux
+# x64 AppImage only, so this fills in the distro packages upstream never builds
+# without touching any upstream file. The AppImage is left to upstream; the
+# auto-update patch makes these .deb/.rpm installs updatable in place from this
+# fork's releases.
+#
+# Every step here mirrors the "Linux x64" matrix entry of upstream's
+# .github/workflows/release.yml. When that entry gains a dependency, this
+# workflow needs the same one. See MIRROR.md.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to build, for example v0.0.40 or v0.0.41-nightly.20260909.1461"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: mirror-linux-build-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  # The fork's patches (see mirror-patches/README.md) are applied to upstream's
+  # source at build time. Checking them here first means a patch that has
+  # gone stale costs one two-minute job instead of four long ones, and gives
+  # a single place to hand the problem to Copilot.
+  preflight:
+    name: Check patches apply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      release_exists: ${{ steps.release.outputs.exists }}
+    steps:
+      # Cheap short-circuit: if this tag already has a release here, the build
+      # matrix is skipped (see build.if) and there is no point checking patches.
+      - name: Check whether this tag is already released
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout upstream tag
+        if: steps.release.outputs.exists != 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Check patches apply
+        id: patches
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          MIRROR_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # The checkout above is upstream's tree at the tag, which contains
+          # none of this fork's files. Bring mirror-patches/ and the script
+          # that applies them in from this fork's ref. That fetch also lands
+          # each patch's pre-image blob in the object database, which is what
+          # `git apply --3way` needs to merge around upstream's edits.
+          # (mirror-patches/, not patches/ - that name is upstream's, for pnpm
+          # patchedDependencies, and clobbering it breaks `vp install`.)
+          git fetch --no-tags --depth=1 origin "$MIRROR_REF"
+          # Named paths, not the whole .github/scripts directory: upstream
+          # has scripts of its own there and the build should use the tag's
+          # copies of those, not main's.
+          git checkout FETCH_HEAD -- \
+            mirror-patches \
+            .github/scripts/apply-mirror-patches.sh \
+            .github/scripts/report-stale-patch.sh
+          .github/scripts/apply-mirror-patches.sh --check
+
+      - name: Hand the stale patch to Copilot
+        if: failure() && steps.patches.outcome == 'failure'
+        shell: bash
+        env:
+          # GITHUB_TOKEN cannot assign the Copilot agent, so the assignment
+          # step needs a PAT. The issue itself is filed with either token, so
+          # the notification still arrives when the PAT is absent or expired.
+          GH_TOKEN: ${{ secrets.MIRROR_COPILOT_TOKEN || github.token }}
+          COPILOT_TOKEN: ${{ secrets.MIRROR_COPILOT_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/report-stale-patch.sh
+
+  build:
+    name: ${{ matrix.target }} ${{ matrix.arch }}
+    needs: [preflight]
+    # Skip the whole four-runner matrix when this tag is already released. The
+    # scheduled sync keeps selecting a tag until a release exists, but the
+    # release lands only in publish at the ~90-minute mark, so the next sync
+    # would otherwise rebuild everything just to re-upload identical assets.
+    if: needs.preflight.outputs.release_exists != 'true'
+    runs-on: ${{ matrix.runner }}
+    # This job runs unmodified upstream build scripts from an unreviewed tag.
+    # Give it read-only scope: artifact upload uses the runtime token, not
+    # GITHUB_TOKEN's scopes, and nothing here should push refs or touch releases.
+    permissions:
+      contents: read
+    # Stock GitHub runners have 4 vCPUs against upstream's 32, and the Rust
+    # helpers dominate a cold build.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Only the distro packages upstream never ships: .deb and .rpm, x64
+          # and arm64. Upstream already provides an AppImage, so this fork does
+          # not rebuild one; the auto-update patch makes .deb/.rpm updatable in
+          # place, which is the whole point of building them here.
+          - target: deb
+            arch: x64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+          - target: deb
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+          - target: rpm
+            arch: x64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+          - target: rpm
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+    env:
+      # Without this, electron-builder derives the update feed from
+      # GITHUB_REPOSITORY, which is already this fork. Setting it explicitly
+      # keeps that intentional rather than incidental, and guarantees a build
+      # run from a differently-named repo never points users at upstream.
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout upstream tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      # Preflight already proved these apply, so a failure here is a runner
+      # or fetch problem rather than a stale patch.
+      - name: Apply mirror patches
+        shell: bash
+        env:
+          MIRROR_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # The checkout above is upstream's tree at the tag, which contains
+          # none of this fork's files. Bring mirror-patches/ and the script
+          # that applies them in from this fork's ref. That fetch also lands
+          # each patch's pre-image blob in the object database, which is what
+          # `git apply --3way` needs to merge around upstream's edits.
+          # (mirror-patches/, not patches/ - that name is upstream's, for pnpm
+          # patchedDependencies, and clobbering it breaks `vp install`.)
+          git fetch --no-tags --depth=1 origin "$MIRROR_REF"
+          # Named paths, not the whole .github/scripts directory: upstream
+          # has scripts of its own there and the build should use the tag's
+          # copies of those, not main's.
+          git checkout FETCH_HEAD -- \
+            mirror-patches \
+            .github/scripts/apply-mirror-patches.sh \
+            .github/scripts/report-stale-patch.sh
+          .github/scripts/apply-mirror-patches.sh
+
+      - name: Resolve build version
+        id: version
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$TAG"
+          version="${tag#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Not a release tag: $tag" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install desktop dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@v6
+        with:
+          path: native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor
+          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Cache Linux capture helpers
+        id: capture_helper_cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            native/kde-snap-shot/target/${{ matrix.rust_target }}/release/t3-kde-snap-shot
+            native/hyprland-snap-shot/target/${{ matrix.rust_target }}/release/t3-hyprland-snap-shot
+          key: linux-capture-helpers-${{ matrix.rust_target }}-${{ hashFiles('native/kde-snap-shot/Cargo.lock', 'native/kde-snap-shot/Cargo.toml', 'native/kde-snap-shot/src/**', 'native/hyprland-snap-shot/Cargo.lock', 'native/hyprland-snap-shot/Cargo.toml', 'native/hyprland-snap-shot/src/**', 'native/hyprland-snap-shot/protocols/**') }}
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true' || steps.capture_helper_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install build libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          # libsecret/pkg-config build the browser secret helper; imagemagick
+          # resizes the hicolor icon set. Both come straight from upstream's
+          # Linux job. fakeroot and rpm are what fpm shells out to for the
+          # two package formats.
+          sudo apt-get install -y libsecret-1-dev pkg-config imagemagick fakeroot rpm
+
+      # electron-builder downloads a prebuilt fpm for x86_64 Linux only. On
+      # arm64 there is no prebuilt to fetch, so install fpm from RubyGems and
+      # tell electron-builder to use it instead of looking for a download.
+      - name: Install system fpm (arm64)
+        if: matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y ruby ruby-dev build-essential
+          sudo gem install --no-document fpm
+          echo "USE_SYSTEM_FPM=true" >> "$GITHUB_ENV"
+
+      - name: Align package versions to release version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/update-release-package-versions.ts "$VERSION"
+
+      - name: Build desktop artifact
+        shell: bash
+        env:
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
+          T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          vp run dist:desktop:artifact \
+            --platform linux \
+            --target "$TARGET" \
+            --arch "$ARCH" \
+            --build-version "$VERSION" \
+            --verbose
+
+      - name: Collect release assets
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish/manifests
+          shopt -s nullglob
+
+          patterns=(release/*.deb release/*.rpm)
+
+          found=0
+          for file in "${patterns[@]}"; do
+            cp "$file" release-publish/
+            found=1
+          done
+          if [[ "$found" -eq 0 ]]; then
+            echo "electron-builder produced no $TARGET package." >&2
+            ls -la release || true
+            exit 1
+          fi
+
+          manifests=(release/*-linux*.yml)
+          if [[ "${#manifests[@]}" -eq 0 ]]; then
+            echo "No update manifest for $TARGET; auto-update would silently report being up to date." >&2
+            ls -la release || true
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
+            cp "$manifest" "release-publish/manifests/$TARGET-$(basename "$manifest")"
+          done
+
+          ls -laR release-publish
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.target }}-${{ matrix.arch }}
+          path: release-publish/**
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout mirror tooling
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: linux-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Merge update manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/merge-linux-update-manifests.py release-assets
+          rm -rf release-assets/manifests
+          ls -la release-assets
+
+      - name: Publish to this fork's releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # gh release create would otherwise invent the tag from the default
+          # branch, attaching packages to the wrong commit. Mirror Upstream
+          # pushes upstream tags here; a miss means it has not run yet.
+          if ! git ls-remote --exit-code --tags \
+            "https://github.com/$GITHUB_REPOSITORY" "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG is not mirrored into $GITHUB_REPOSITORY yet. Run the Mirror upstream workflow first." >&2
+            exit 1
+          fi
+
+          if [[ "$TAG" == *-nightly.* ]]; then
+            channel_args=(--prerelease --latest=false)
+            channel_note="an upstream **nightly**"
+          else
+            channel_args=(--latest)
+            channel_note="an upstream **stable release**"
+          fi
+
+          {
+            echo "Unofficial Linux packages built from upstream [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG)."
+            echo
+            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at that tag, because upstream CI ships a Linux x64 AppImage only. This tag is $channel_note."
+            echo
+            echo "- Formats: \`.deb\` and \`.rpm\`, x64 and arm64"
+            echo "- **Auto-update works**, from this fork's releases. Installs prompt once for your password (via \`pkexec\`) because the update is applied with \`dpkg\`/\`rpm\`, the same way Windows prompts through UAC. A desktop without \`pkexec\` cannot auto-update; reinstall the newer package by hand."
+            echo "- For the AppImage, use the official [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases) - this fork does not rebuild it."
+            echo "- Cloud sign-in and T3 Connect are disabled in these builds. See MIRROR.md."
+            echo
+            echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
+          } > release-notes.md
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Linux packages for $TAG" \
+              --notes-file release-notes.md \
+              "${channel_args[@]}"
+          fi
