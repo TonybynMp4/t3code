@@ -57,7 +57,7 @@ fi
   echo
   echo "## What to do"
   echo
-  echo "Update the patch file on \`main\` so it applies to \`$TAG\`, preserving what it does — \`mirror-patches/README.md\` explains the intent of each one, and the intent is what matters, not the exact diff. Upstream has moved the code the patch targets; find where it went and patch it there."
+  echo "Update the patch file on \`main\` so it applies to \`$TAG\`, preserving what it does — each patch has a sibling \`.md\` in \`mirror-patches/\` explaining its intent, and the intent is what matters, not the exact diff. Upstream has moved the code the patch targets; find where it went and patch it there."
   echo
   echo "Reproduce with:"
   echo
