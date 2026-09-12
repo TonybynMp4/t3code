@@ -374,6 +374,12 @@ jobs:
             channel_note="an upstream **stable release**"
           fi
 
+          # Best-effort: upstream's own release body, folded in below so this
+          # release's changelog is not a second page to check. Absent (for
+          # example a tag upstream hasn't released yet) just drops the section.
+          gh api "repos/pingdotgg/t3code/releases/tags/$TAG" --jq '.body // ""' \
+            > upstream-notes.md 2>/dev/null || : > upstream-notes.md
+
           {
             echo "Unofficial Linux packages built from upstream [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG)."
             echo
@@ -385,6 +391,16 @@ jobs:
             echo "- Cloud sign-in and T3 Connect are disabled in these builds. See MIRROR.md."
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
+
+            if grep -q '[^[:space:]]' upstream-notes.md; then
+              echo
+              echo "<details>"
+              echo "<summary>Upstream changelog for $TAG</summary>"
+              echo
+              cat upstream-notes.md
+              echo
+              echo "</details>"
+            fi
           } > release-notes.md
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
