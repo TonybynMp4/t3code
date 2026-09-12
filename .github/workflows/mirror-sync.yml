@@ -9,9 +9,6 @@ name: Mirror upstream
 
 on:
   schedule:
-    # Upstream cuts several nightlies a day. Half-hourly polling picks each
-    # stable tag up quickly without turning nightlies into a build every run,
-    # since only the newest unbuilt nightly is ever selected below.
     - cron: "7,37 * * * *"
   workflow_dispatch:
 
@@ -113,6 +110,12 @@ jobs:
           # Nightly tags sort by their embedded date and run number, which
           # v:refname orders correctly, but creation order is what upstream
           # actually published in.
+          #
+          # Upstream's -preview.* tags are deliberately left out. They are a
+          # dogfooding train built with no publish config, so electron-builder
+          # emits no update manifest for them and an installed package could
+          # never update itself - see isDesktopPreviewVersion in
+          # scripts/build-desktop-artifact.ts.
           mapfile -t nightly_tags < <(git tag -l 'v*-nightly.*' --sort=-creatordate)
           latest_nightly="${nightly_tags[0]:-}"
 
