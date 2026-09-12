@@ -52,14 +52,19 @@ describe("applyUsageLimitsUpdate", () => {
     });
   });
 
-  it("leaves an unsupported account and an empty update alone", () => {
-    const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };
-    expect(
-      applyUsageLimitsUpdate({ previous: unsupported, checkedAt, update: { windows: [session] } }),
-    ).toBe(unsupported);
+  it("leaves an empty update alone", () => {
     expect(
       applyUsageLimitsUpdate({ previous: published, checkedAt, update: { windows: [] } }),
     ).toBe(published);
+  });
+
+  // Claude Team and Enterprise accounts probe as unsupported and then stream
+  // their real windows on every turn, so the turn has to win.
+  it("clears an unsupported snapshot once a turn reports a window", () => {
+    const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };
+    expect(
+      applyUsageLimitsUpdate({ previous: unsupported, checkedAt, update: { windows: [session] } }),
+    ).toEqual({ checkedAt, windows: [session] });
   });
 
   it("preserves reset credits when a streamed window update changes usage", () => {
@@ -79,11 +84,27 @@ describe("applyUsageLimitsUpdate", () => {
 });
 
 describe("resolveUsageLimitsAfterProbe", () => {
-  it("keeps the last good windows through a failed probe but not an unsupported one", () => {
-    const failed = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };
-    const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };
+  const failed = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };
+  const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };
+
+  it("keeps the last good windows through a failed probe", () => {
     expect(resolveUsageLimitsAfterProbe({ published, probed: failed })).toBe(published);
-    expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(unsupported);
     expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: failed })).toBe(failed);
+  });
+
+  // A probe that reads windows never answers unsupported, so windows on screen
+  // mean a turn reported limits this probe cannot see. Blanking them here
+  // would flicker the bars off on every status refresh.
+  it("keeps windows a turn established through an unsupported probe", () => {
+    expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(published);
+  });
+
+  it("still reports unsupported when no windows were ever drawn", () => {
+    expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: unsupported })).toBe(
+      unsupported,
+    );
+    expect(resolveUsageLimitsAfterProbe({ published: failed, probed: unsupported })).toBe(
+      unsupported,
+    );
   });
 });

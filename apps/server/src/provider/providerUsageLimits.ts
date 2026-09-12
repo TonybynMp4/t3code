@@ -54,8 +54,11 @@ export function makeUnavailableUsageLimits(input: {
  * `windowDurationMins` keeps whatever the last probe resolved for it. An
  * update with no windows leaves `previous` untouched.
  *
- * An `unsupported` snapshot stays unsupported: an account that cannot have
- * subscription windows will not start reporting them mid-turn.
+ * An update carrying windows clears an `unsupported` snapshot. A probe only
+ * ever guesses at whether an account has subscription windows, and for Claude
+ * Team and Enterprise accounts it guesses wrong: `get_usage` reports no limits
+ * for them, yet every turn streams their real utilization. A window arriving
+ * from the runtime is first-hand proof the probe was wrong, so it wins.
  */
 export function applyUsageLimitsUpdate(input: {
   readonly previous: ServerProviderUsageLimits | undefined;
@@ -63,7 +66,7 @@ export function applyUsageLimitsUpdate(input: {
   readonly checkedAt: string;
 }): ServerProviderUsageLimits | undefined {
   const { previous, update } = input;
-  if (update.windows.length === 0 || previous?.unavailable?.reason === "unsupported") {
+  if (update.windows.length === 0) {
     return previous;
   }
   const merged = new Map(previous?.windows.map((window) => [window.id, window] as const));
@@ -111,8 +114,14 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
 /**
  * Choose what to publish after a status probe finishes. A probe that failed
  * this time must not wipe bars a previous probe or a turn already
- * established, so the last good snapshot stays; `unsupported` is
- * authoritative and replaces them.
+ * established, so the last good snapshot stays.
+ *
+ * `unsupported` gets the same treatment once windows are on screen. A probe
+ * that reads windows never answers `unsupported`, so windows plus an
+ * `unsupported` probe can only mean a turn reported limits the probe cannot
+ * see, which is the normal state of a Claude Team or Enterprise account.
+ * Letting the probe win there would blank the bars on every status refresh
+ * and redraw them on the next turn.
  *
  * A successful probe replaces the published windows outright, including any
  * runtime update that landed while it was running. That is a deliberate
@@ -127,6 +136,9 @@ export function resolveUsageLimitsAfterProbe(input: {
   readonly probed: ServerProviderUsageLimits | undefined;
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
+  if (probed?.unavailable && published && !published.unavailable && published.windows.length > 0) {
+    return published;
+  }
   if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
     return published;
   }
