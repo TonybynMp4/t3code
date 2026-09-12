@@ -366,13 +366,24 @@ jobs:
             exit 1
           fi
 
-          if [[ "$TAG" == *-nightly.* ]]; then
-            channel_args=(--prerelease --latest=false)
-            channel_note="an upstream **nightly**"
-          else
-            channel_args=(--latest)
-            channel_note="an upstream **stable release**"
-          fi
+          case "$TAG" in
+            *-nightly.*)
+              channel_args=(--prerelease --latest=false)
+              channel_note="an upstream **nightly**"
+              ;;
+            *-preview.*)
+              channel_args=(--prerelease --latest=false)
+              channel_note="an upstream **preview**"
+              ;;
+            *-*)
+              channel_args=(--prerelease --latest=false)
+              channel_note="an upstream **prerelease**"
+              ;;
+            *)
+              channel_args=(--latest)
+              channel_note="an upstream **stable release**"
+              ;;
+          esac
 
           # Best-effort: upstream's own release body, folded in below so this
           # release's changelog is not a second page to check. Absent (for
