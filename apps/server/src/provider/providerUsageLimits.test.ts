@@ -94,9 +94,23 @@ describe("resolveUsageLimitsAfterProbe", () => {
 
   // A probe that reads windows never answers unsupported, so windows on screen
   // mean a turn reported limits this probe cannot see. Blanking them here
-  // would flicker the bars off on every status refresh.
-  it("keeps windows a turn established through an unsupported probe", () => {
-    expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(published);
+  // would flicker the bars off on every status refresh. Only Claude asks for
+  // this treatment; it's the provider whose probe misreads Team/Enterprise
+  // accounts.
+  it("keeps windows a turn established through an unsupported probe when opted in", () => {
+    expect(
+      resolveUsageLimitsAfterProbe({
+        published,
+        probed: unsupported,
+        keepPublishedWindowsWhenProbeUnsupported: true,
+      }),
+    ).toBe(published);
+  });
+
+  it("reports unsupported over stale windows when not opted in", () => {
+    // Codex's probe reporting unsupported (e.g. right after an account
+    // switch) is authoritative and must replace the previous account's bars.
+    expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(unsupported);
   });
 
   it("still reports unsupported when no windows were ever drawn", () => {

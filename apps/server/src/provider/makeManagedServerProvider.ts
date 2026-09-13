@@ -54,6 +54,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   readonly refreshInterval?: Duration.Input;
   readonly refreshOnInterval?: boolean;
   readonly checkProviderOnSettingsChange?: (previous: Settings, next: Settings) => boolean;
+  readonly keepPublishedWindowsWhenProbeUnsupported?: boolean;
 }): Effect.fn.Return<
   ServerProviderShape,
   ServerSettingsError,
@@ -162,6 +163,12 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
           resolveUsageLimitsAfterProbe({
             published: state.snapshot.usageLimits,
             probed: probedSnapshot.usageLimits,
+            ...(input.keepPublishedWindowsWhenProbeUnsupported !== undefined
+              ? {
+                  keepPublishedWindowsWhenProbeUnsupported:
+                    input.keepPublishedWindowsWhenProbeUnsupported,
+                }
+              : {}),
           }),
         );
         return [
