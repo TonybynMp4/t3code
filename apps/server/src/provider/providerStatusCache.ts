@@ -2,6 +2,8 @@ import {
   type ProviderInstanceId,
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
+  type ServerProviderUsageLimits,
+  type ServerProviderUsageWindow,
 } from "@t3tools/contracts";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Effect from "effect/Effect";
@@ -58,6 +60,58 @@ export const orderProviderSnapshots = (
       left.instanceId.localeCompare(right.instanceId),
   );
 
+/**
+ * The moment a cached window's percentage stops describing anything: its
+ * rolling period rolls over and the quota it measured is gone. `resetsAt`
+ * names that moment outright, and a window without one is bounded instead by
+ * how long its period runs from the read that cached it. A window carrying
+ * neither could be any age, so it gets no expiry and is never replayed.
+ */
+const usageWindowExpiresAt = (
+  window: ServerProviderUsageWindow,
+  checkedAt: string,
+): number | undefined => {
+  if (window.resetsAt !== undefined) {
+    const resetsAt = Date.parse(window.resetsAt);
+    return Number.isNaN(resetsAt) ? undefined : resetsAt;
+  }
+  if (window.windowDurationMins === undefined) {
+    return undefined;
+  }
+  const readAt = Date.parse(checkedAt);
+  return Number.isNaN(readAt) ? undefined : readAt + window.windowDurationMins * 60_000;
+};
+
+/**
+ * The bars to put on screen before this run's probe has answered, or
+ * `undefined` to leave the fallback's alone.
+ *
+ * Only windows survive the trip from disk. An `unavailable` snapshot is the
+ * last probe's verdict on the account, and for a Claude Team or Enterprise
+ * account that verdict is wrong in a way only a turn can correct — replaying
+ * it would put last run's "no subscription limits" back on screen before this
+ * run has looked. Windows are first-hand numbers, so they are replayed for as
+ * long as they describe a period that has not rolled over.
+ */
+export const hydrateCachedUsageLimits = (input: {
+  readonly cachedLimits: ServerProviderUsageLimits | undefined;
+  readonly nowMillis: number;
+}): ServerProviderUsageLimits | undefined => {
+  const cached = input.cachedLimits;
+  if (cached === undefined) {
+    return undefined;
+  }
+  const windows = cached.windows.filter((window) => {
+    const expiresAt = usageWindowExpiresAt(window, cached.checkedAt);
+    return expiresAt !== undefined && expiresAt > input.nowMillis;
+  });
+  if (windows.length === 0) {
+    return undefined;
+  }
+  const { unavailable: _unavailable, ...rest } = cached;
+  return { ...rest, windows };
+};
+
 export const isCachedProviderCorrelated = (input: {
   readonly cachedProvider: ServerProvider;
   readonly fallbackProvider: ServerProvider;
@@ -68,6 +122,7 @@ export const isCachedProviderCorrelated = (input: {
 export const hydrateCachedProvider = (input: {
   readonly cachedProvider: ServerProvider;
   readonly fallbackProvider: ServerProvider;
+  readonly nowMillis: number;
 }): ServerProvider => {
   if (!isCachedProviderCorrelated(input)) {
     return input.fallbackProvider;
@@ -80,9 +135,14 @@ export const hydrateCachedProvider = (input: {
     return input.fallbackProvider;
   }
 
+  const usageLimits = hydrateCachedUsageLimits({
+    cachedLimits: input.cachedProvider.usageLimits,
+    nowMillis: input.nowMillis,
+  });
   const { message: _fallbackMessage, ...fallbackWithoutMessage } = input.fallbackProvider;
   const hydratedProvider: ServerProvider = {
     ...fallbackWithoutMessage,
+    ...(usageLimits !== undefined ? { usageLimits } : {}),
     models: mergeProviderModels(input.fallbackProvider.models, input.cachedProvider.models),
     installed: input.cachedProvider.installed,
     version: input.cachedProvider.version,

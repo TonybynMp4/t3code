@@ -116,12 +116,16 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
  * this time must not wipe bars a previous probe or a turn already
  * established, so the last good snapshot stays.
  *
- * `unsupported` gets the same treatment once windows are on screen. A probe
+ * `unsupported` gets the same treatment once windows are on screen, but only
+ * for providers that pass `keepPublishedWindowsWhenProbeUnsupported`. A probe
  * that reads windows never answers `unsupported`, so windows plus an
  * `unsupported` probe can only mean a turn reported limits the probe cannot
  * see, which is the normal state of a Claude Team or Enterprise account.
  * Letting the probe win there would blank the bars on every status refresh
- * and redraw them on the next turn.
+ * and redraw them on the next turn. Other providers have no such quirk: a
+ * Codex probe reporting `unsupported` (for example, right after switching to
+ * an API-key account) is authoritative and must replace stale windows from a
+ * previous account.
  *
  * A successful probe replaces the published windows outright, including any
  * runtime update that landed while it was running. That is a deliberate
@@ -134,9 +138,16 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
 export function resolveUsageLimitsAfterProbe(input: {
   readonly published: ServerProviderUsageLimits | undefined;
   readonly probed: ServerProviderUsageLimits | undefined;
+  readonly keepPublishedWindowsWhenProbeUnsupported?: boolean;
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
-  if (probed?.unavailable && published && !published.unavailable && published.windows.length > 0) {
+  if (
+    input.keepPublishedWindowsWhenProbeUnsupported &&
+    probed?.unavailable &&
+    published &&
+    !published.unavailable &&
+    published.windows.length > 0
+  ) {
     return published;
   }
   if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
