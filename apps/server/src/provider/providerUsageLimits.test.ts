@@ -92,6 +92,17 @@ describe("resolveUsageLimitsAfterProbe", () => {
     expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: failed })).toBe(failed);
   });
 
+  it("keeps the last good windows when the probe omits usageLimits entirely", () => {
+    // Every driver omits usageLimits on early-return failure paths (missing
+    // executable, spawn failure, timeout), and some drivers never populate it
+    // at all. That carries no information, so it must not erase windows a
+    // runtime update already established.
+    expect(resolveUsageLimitsAfterProbe({ published, probed: undefined })).toBe(published);
+    expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: undefined })).toBe(
+      undefined,
+    );
+  });
+
   // A probe that reads windows never answers unsupported, so windows on screen
   // mean a turn reported limits this probe cannot see. Blanking them here
   // would flicker the bars off on every status refresh. Only Claude asks for
