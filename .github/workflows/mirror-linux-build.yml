@@ -39,7 +39,7 @@ jobs:
   # a single place to hand the problem to Copilot.
   preflight:
     name: Check patches apply
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -134,19 +134,19 @@ jobs:
           # place, which is the whole point of building them here.
           - target: deb
             arch: x64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
             rust_target: x86_64-unknown-linux-gnu
           - target: deb
             arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
             rust_target: aarch64-unknown-linux-gnu
           - target: rpm
             arch: x64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
             rust_target: x86_64-unknown-linux-gnu
           - target: rpm
             arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
             rust_target: aarch64-unknown-linux-gnu
     env:
       # Without this, electron-builder derives the update feed from
@@ -324,7 +324,7 @@ jobs:
   publish:
     name: Publish release
     needs: [build]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write

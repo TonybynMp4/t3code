@@ -22,7 +22,7 @@ concurrency:
 jobs:
   sync:
     name: Sync refs and pick tags
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     outputs:
       stable_tag: ${{ steps.pick.outputs.stable_tag }}
