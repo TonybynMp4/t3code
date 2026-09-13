@@ -1,0 +1,74 @@
+name: Mirror patch apply check
+
+on:
+  pull_request:
+    paths:
+      - mirror-patches/**
+      - .github/scripts/apply-mirror-patches.sh
+      - .github/workflows/mirror-linux-build.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional upstream tag to verify against, e.g. v0.0.40"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check mirror patches apply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Resolve target tag
+        id: target
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          tag="${INPUT_TAG:-}"
+          if [[ -z "$tag" ]]; then
+            tag="$(printf '%s\n%s\n' "${PR_TITLE:-}" "${PR_BODY:-}" \
+              | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?' \
+              | head -n1 || true)"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            tag="$(git ls-remote --refs --tags https://github.com/pingdotgg/t3code 'v[0-9]*' \
+              | awk '{print $2}' \
+              | sed 's#refs/tags/##' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | tail -n1)"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "Could not resolve an upstream tag to validate against." >&2
+            exit 1
+          fi
+
+          echo "Checking patches against $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check patches apply to upstream tag
+        shell: bash
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags --depth=1 https://github.com/pingdotgg/t3code "refs/tags/$TAG:refs/tags/$TAG"
+          git checkout --detach "refs/tags/$TAG"
+          git checkout "$GITHUB_SHA" -- mirror-patches .github/scripts/apply-mirror-patches.sh
+          .github/scripts/apply-mirror-patches.sh --check
