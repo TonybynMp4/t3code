@@ -419,7 +419,7 @@ jobs:
           else
             gh release create "$TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Linux packages for $TAG" \
+              --title "$TAG" \
               --notes-file release-notes.md \
               "${channel_args[@]}"
           fi
