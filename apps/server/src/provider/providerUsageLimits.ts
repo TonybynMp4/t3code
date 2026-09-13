@@ -116,6 +116,12 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
  * this time must not wipe bars a previous probe or a turn already
  * established, so the last good snapshot stays.
  *
+ * Every driver omits `usageLimits` entirely on early-return failure paths
+ * (executable missing, spawn failure, timeout), and several drivers never
+ * populate it at all. That omission carries no information about the
+ * account's actual windows, so it is treated the same as a failed probe: the
+ * last published snapshot stands.
+ *
  * `unsupported` gets the same treatment once windows are on screen, but only
  * for providers that pass `keepPublishedWindowsWhenProbeUnsupported`. A probe
  * that reads windows never answers `unsupported`, so windows plus an
@@ -141,6 +147,9 @@ export function resolveUsageLimitsAfterProbe(input: {
   readonly keepPublishedWindowsWhenProbeUnsupported?: boolean;
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
+  if (probed === undefined && published && !published.unavailable && published.windows.length > 0) {
+    return published;
+  }
   if (
     input.keepPublishedWindowsWhenProbeUnsupported &&
     probed?.unavailable &&
