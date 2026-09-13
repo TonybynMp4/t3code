@@ -1,0 +1,42 @@
+diff --git a/apps/desktop/src/app/DesktopLinuxUrlHandler.ts b/apps/desktop/src/app/DesktopLinuxUrlHandler.ts
+index 626bf00e..f5a5d32f 100644
+--- a/apps/desktop/src/app/DesktopLinuxUrlHandler.ts
++++ b/apps/desktop/src/app/DesktopLinuxUrlHandler.ts
+@@ -99,9 +99,16 @@ export const make = Effect.gen(function* () {
+   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+ 
+   const scheme = ElectronProtocol.getDesktopScheme(environment.isDevelopment);
++  // A packaged .deb/.rpm install already ships its own launcher entry
++  // (t3code.desktop) with the icon and StartupWMClass wired up; only the
++  // AppImage and unpackaged dev paths need the synthesised handler entry.
++  const isDebOrRpmInstall = environment.isPackaged && Option.isNone(environment.appImagePath);
++  const desktopEntryName = isDebOrRpmInstall
++    ? environment.linuxDesktopEntryName
++    : URL_HANDLER_DESKTOP_ENTRY_NAME;
+   const desktopEntryPath = environment.path.join(
+     environment.linuxApplicationsDir,
+-    URL_HANDLER_DESKTOP_ENTRY_NAME,
++    desktopEntryName,
+   );
+ 
+   const writeDesktopEntry = Effect.gen(function* () {
+@@ -133,7 +140,7 @@ export const make = Effect.gen(function* () {
+     Effect.gen(function* () {
+       const command = ChildProcess.make(
+         "xdg-mime",
+-        ["default", URL_HANDLER_DESKTOP_ENTRY_NAME, `x-scheme-handler/${scheme}`],
++        ["default", desktopEntryName, `x-scheme-handler/${scheme}`],
+         {
+           stdin: "ignore",
+           stdout: "ignore",
+@@ -166,7 +173,9 @@ export const make = Effect.gen(function* () {
+     if (environment.platform !== "linux" || !environment.isPackaged) {
+       return;
+     }
+-    yield* writeDesktopEntry;
++    if (!isDebOrRpmInstall) {
++      yield* writeDesktopEntry;
++    }
+     yield* setDefaultHandler;
+     yield* logInfo("registered URL scheme handler", { scheme });
+   }).pipe(

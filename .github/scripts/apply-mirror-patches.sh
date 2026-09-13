@@ -18,23 +18,64 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 
 shopt -s nullglob
-patches=(mirror-patches/*.patch)
-if [[ "${#patches[@]}" -eq 0 ]]; then
+all_patches=(mirror-patches/*.patch)
+if [[ "${#all_patches[@]}" -eq 0 ]]; then
   echo "No patches to apply."
   exit 0
 fi
 
-for patch in "${patches[@]}"; do
-  echo "Applying $patch"
+# Patches are named NNNN-name.patch, optionally with alternate variants for a
+# shape upstream has restructured into: NNNN-name.<variant>.patch. Group by
+# the NNNN prefix and try each variant in that group until one applies
+# cleanly, so the same logical patch keeps working across upstream reshuffles
+# without us knowing in advance which shape a given tag has.
+prefixes=()
+for patch in "${all_patches[@]}"; do
+  base=$(basename "$patch")
+  prefix="${base%%-*}"
+  if [[ ! " ${prefixes[*]-} " == *" $prefix "* ]]; then
+    prefixes+=("$prefix")
+  fi
+done
+
+for prefix in "${prefixes[@]}"; do
+  variants=(mirror-patches/"$prefix"-*.patch)
+  chosen=""
+  for variant in "${variants[@]}"; do
+    if git apply --3way --check "$variant" >/dev/null 2>&1; then
+      chosen="$variant"
+      break
+    fi
+  done
+
+  # None of the variants apply. Re-run the first one verbosely so the
+  # failure (and any conflict markers left by --3way) end up in the log for
+  # whoever rewrites the patch, human or Copilot.
+  if [[ -z "$chosen" ]]; then
+    variant="${variants[0]}"
+    echo "Applying $variant"
+    args=(--3way --verbose)
+    if [[ "$check_only" -eq 1 ]]; then
+      args+=(--check)
+    fi
+    git apply "${args[@]}" "$variant" || true
+    if [[ "${#variants[@]}" -gt 1 ]]; then
+      echo "::error file=$variant::none of the $prefix variants apply to this tag" >&2
+    else
+      echo "::error file=$variant::$variant does not apply to this tag" >&2
+    fi
+    git --no-pager diff -- . ':!mirror-patches' || true
+    git checkout -- . || true
+    exit 1
+  fi
+
+  echo "Applying $chosen"
   args=(--3way --verbose)
   if [[ "$check_only" -eq 1 ]]; then
     args+=(--check)
   fi
-  if ! git apply "${args[@]}" "$patch"; then
-    # A failed --3way leaves conflict markers behind. Print them: the
-    # surrounding upstream code is exactly what whoever rewrites the patch,
-    # human or Copilot, needs to see.
-    echo "::error file=$patch::$patch does not apply to this tag" >&2
+  if ! git apply "${args[@]}" "$chosen"; then
+    echo "::error file=$chosen::$chosen does not apply to this tag" >&2
     git --no-pager diff -- . ':!mirror-patches' || true
     git checkout -- . || true
     exit 1
