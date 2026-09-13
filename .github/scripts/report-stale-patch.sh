@@ -15,6 +15,12 @@ set -euo pipefail
 
 git checkout -- . 2>/dev/null || true
 
+request_copilot_fix() {
+  local issue_number="$1"
+  gh issue comment "$issue_number" --repo "$GITHUB_REPOSITORY" --body \
+    "@copilot Please update the stale mirror patch so \`.github/scripts/apply-mirror-patches.sh --check\` passes for \`$TAG\`. See the failed run: $RUN_URL"
+}
+
 # Name the patches that no longer apply, so the issue points at a file rather
 # than at a log the reader has to scroll.
 shopt -s nullglob
@@ -41,6 +47,7 @@ existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
 if [[ -n "$existing" ]]; then
   gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
     --body "Still failing on \`$TAG\`. [Run]($RUN_URL)."
+  request_copilot_fix "$existing"
   echo "Commented on existing issue #$existing."
   exit 0
 fi
@@ -81,12 +88,14 @@ issue_url="$(gh issue create --repo "$GITHUB_REPOSITORY" \
   --title "$title" --label mirror-patch --body-file /tmp/mirror-patch-issue.md)"
 echo "Filed $issue_url"
 
+issue_number="${issue_url##*/}"
+request_copilot_fix "$issue_number"
+
 if [[ -z "${COPILOT_TOKEN:-}" ]]; then
   echo "MIRROR_COPILOT_TOKEN is not set, so Copilot was not assigned. Fix the patch by hand, or add the secret." >&2
   exit 0
 fi
 
-issue_number="${issue_url##*/}"
 owner="${GITHUB_REPOSITORY%%/*}"
 name="${GITHUB_REPOSITORY##*/}"
 
@@ -105,7 +114,7 @@ bot_id="$(gh api graphql -f owner="$owner" -f name="$name" \
       }
     }' \
   --jq '.data.repository.suggestedActors.nodes[]
-        | select(.login == "copilot-swe-agent") | .id' 2>/dev/null || true)"
+        | select(.login == "Copilot" or .login == "copilot-swe-agent") | .id' 2>/dev/null || true)"
 
 issue_id="$(gh api graphql -f owner="$owner" -f name="$name" -F number="$issue_number" \
   -f query='

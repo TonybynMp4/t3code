@@ -31,11 +31,12 @@ So regenerate the patch against `main` (`git checkout main -- <file>`, edit,
 `git diff > mirror-patches/xxxx.patch`) whenever upstream moves the file it
 targets, not only when it stops applying.
 
-| Patch | What it does |
-| --- | --- |
-| [`0001-linux-deb-rpm-auto-update`](0001-linux-deb-rpm-auto-update.md) | Lets `.deb`/`.rpm` installs use the in-app updater. |
-| [`0002-linux-deb-rpm-package-metadata`](0002-linux-deb-rpm-package-metadata.md) | Fills in the package metadata `.deb`/`.rpm` need. |
-| [`0003-linux-appstream-metainfo`](0003-linux-appstream-metainfo.md) | Ships an AppStream component so software centres describe the app. |
+| Patch                                                                           | What it does                                                       |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`0001-linux-deb-rpm-auto-update`](0001-linux-deb-rpm-auto-update.md)           | Lets `.deb`/`.rpm` installs use the in-app updater.                |
+| [`0002-linux-deb-rpm-package-metadata`](0002-linux-deb-rpm-package-metadata.md) | Fills in the package metadata `.deb`/`.rpm` need.                  |
+| [`0003-linux-appstream-metainfo`](0003-linux-appstream-metainfo.md)             | Ships an AppStream component so software centres describe the app. |
+| [`0004-linux-desktop-entry-identity`](0004-linux-desktop-entry-identity.md)     | Makes a `.deb`/`.rpm` install group under its own launcher icon.   |
 
 When a patch goes stale the intent is what matters, not the exact diff — read
 its `.md` first, then reapply the same behaviour wherever upstream moved the

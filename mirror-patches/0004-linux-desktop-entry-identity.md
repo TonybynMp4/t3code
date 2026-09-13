@@ -1,0 +1,43 @@
+# 0004-linux-desktop-entry-identity.patch
+
+Makes a `.deb`/`.rpm` install group under its own launcher icon.
+
+Upstream's Linux desktop identity is written for the AppImage case, where no
+`.desktop` file is installed by a package manager. So the app synthesises a
+hidden, icon-less handler entry named after the reverse-DNS app id
+(`com.t3tools.T3Code.desktop`) and points the window identity at it via
+`app.setDesktopName`. On X11 that is invisible to window matching, which keys
+off `StartupWMClass` / the `--class` switch (both `t3code`). On Wayland,
+however, the compositor matches a window to a launcher by its **app id**, which
+`setDesktopName` sets. So a Wayland session matched the window to the hidden
+entry, which has no `Icon=`, instead of the pinned launcher, spawning a
+second, generic "cog" icon in the dash.
+
+Our `.deb`/`.rpm` already ships `/usr/share/applications/t3code.desktop` with
+the icon, `StartupWMClass=t3code`, and the `x-scheme-handler/t3code` MIME
+registration. So for a packaged, non-AppImage install this patch:
+
+- sets the window identity to `t3code.desktop` (app id `t3code`) so Wayland
+  matches the installed launcher;
+- stops writing the redundant hidden reverse-DNS entry (writing it under
+  `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`) would
+  only give the compositor a rival, icon-less entry to match again);
+- points the `xdg-mime default` scheme registration at that same installed
+  `t3code.desktop`;
+- aligns compositor window snapshot and shortcut matching in `DesktopSnapShot`
+  with `t3code` so window captures and shortcuts route to the packaged window
+  instead of looking for the reverse-DNS identity.
+
+The AppImage path (`$APPIMAGE` set) and the unpackaged dev path are unchanged:
+both still synthesise and own the handler entry, because no package-installed
+`.desktop` exists for them. The gate is `app.isPackaged && !$APPIMAGE` in the
+pre-ready module and `environment.isPackaged && Option.isNone(appImagePath)` in
+the runtime handler and snapshot capture service, the same "is this a deb/rpm
+install" test across all three consumers.
+
+If it stops applying, reapply the same idea wherever the identity is set: for a
+package-managed Linux install, adopt the installed launcher's basename
+(`t3code`) as the window app id and do not write a competing entry. What matters
+is that the running window's app id equals the installed `.desktop` basename
+across startup identity, URL handler registration, and compositor snapshot
+matching.
