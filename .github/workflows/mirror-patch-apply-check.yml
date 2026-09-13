@@ -17,18 +17,15 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: Check mirror patches apply
+  resolve:
+    name: Resolve target tag(s)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.resolve.outputs.tags }}
     steps:
-      - name: Checkout pull request
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - name: Resolve target tag
-        id: target
+      - name: Resolve target tag(s)
+        id: resolve
         shell: bash
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
@@ -44,27 +41,59 @@ jobs:
               | head -n1 || true)"
           fi
 
-          if [[ -z "$tag" ]]; then
-            tag="$(git ls-remote --refs --tags https://github.com/pingdotgg/t3code 'v[0-9]*' \
-              | awk '{print $2}' \
-              | sed 's#refs/tags/##' \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-              | sort -V \
-              | tail -n1)"
+          if [[ -n "$tag" ]]; then
+            # An explicit tag (workflow_dispatch input, or one referenced in the
+            # PR title/body) checks only that tag - the PR is about a specific
+            # upstream release, not the general health of the patches.
+            echo "Checking patches against $tag only (explicitly requested)"
+            echo "tags=[{\"channel\":\"requested\",\"tag\":\"$tag\"}]" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-          if [[ -z "$tag" ]]; then
+          # No explicit tag: a patch has to survive both channels it ships
+          # on, so check the latest stable release and the latest nightly.
+          # Read the whole list rather than piping into `head`: with hundreds
+          # of tags `head` closes the pipe early and `sort -V`/`git ls-remote`
+          # can die with SIGPIPE (141) under `set -o pipefail`.
+          mapfile -t refs < <(git ls-remote --refs --tags https://github.com/pingdotgg/t3code 'v[0-9]*' \
+            | awk '{print $2}' \
+            | sed 's#refs/tags/##')
+
+          stable_tag="$(printf '%s\n' "${refs[@]}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+          nightly_tag="$(printf '%s\n' "${refs[@]}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9.]+$' | sort -V | tail -n1 || true)"
+
+          if [[ -z "$stable_tag" && -z "$nightly_tag" ]]; then
             echo "Could not resolve an upstream tag to validate against." >&2
             exit 1
           fi
 
-          echo "Checking patches against $tag"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          entries=()
+          [[ -n "$stable_tag" ]] && entries+=("{\"channel\":\"stable\",\"tag\":\"$stable_tag\"}")
+          [[ -n "$nightly_tag" ]] && entries+=("{\"channel\":\"nightly\",\"tag\":\"$nightly_tag\"}")
+          json="$(IFS=,; echo "[${entries[*]}]")"
+
+          echo "Checking patches against stable ($stable_tag) and nightly ($nightly_tag)"
+          echo "tags=$json" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: Check mirror patches apply (${{ matrix.channel }})
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.resolve.outputs.tags) }}
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
 
       - name: Check patches apply to upstream tag
         shell: bash
         env:
-          TAG: ${{ steps.target.outputs.tag }}
+          TAG: ${{ matrix.tag }}
         run: |
           set -euo pipefail
 
