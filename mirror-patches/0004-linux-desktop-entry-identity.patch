@@ -1,125 +1,55 @@
+diff --git a/apps/desktop/src/app/DesktopAppIdentity.ts b/apps/desktop/src/app/DesktopAppIdentity.ts
+index 9df14250f..b4009809a 100644
+--- a/apps/desktop/src/app/DesktopAppIdentity.ts
++++ b/apps/desktop/src/app/DesktopAppIdentity.ts
+@@ -132,7 +132,10 @@ export const make = Effect.gen(function* () {
+     }
+ 
+     if (environment.platform === "linux") {
+-      yield* electronApp.setDesktopName(environment.linuxDesktopEntryName);
++      const isDebOrRpmInstall = environment.isPackaged && Option.isNone(environment.appImagePath);
++      yield* electronApp.setDesktopName(
++        isDebOrRpmInstall ? `${environment.linuxWmClass}.desktop` : environment.linuxDesktopEntryName,
++      );
+     }
+ 
+     // Unpackaged runs only. A packaged bundle already carries its icon in
 diff --git a/apps/desktop/src/app/DesktopLinuxUrlHandler.ts b/apps/desktop/src/app/DesktopLinuxUrlHandler.ts
-index 404aff34c6..40c84a97f1 100644
+index 626bf00ec..553636d96 100644
 --- a/apps/desktop/src/app/DesktopLinuxUrlHandler.ts
 +++ b/apps/desktop/src/app/DesktopLinuxUrlHandler.ts
-@@ -97,9 +97,13 @@ export const make = Effect.gen(function* () {
+@@ -99,9 +99,13 @@ export const make = Effect.gen(function* () {
    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
  
    const scheme = ElectronProtocol.getDesktopScheme(environment.isDevelopment);
 +  const isDebOrRpmInstall = environment.isPackaged && Option.isNone(environment.appImagePath);
 +  const desktopEntryName = isDebOrRpmInstall
 +    ? `${environment.linuxWmClass}.desktop`
-+    : environment.linuxDesktopEntryName;
++    : URL_HANDLER_DESKTOP_ENTRY_NAME;
    const desktopEntryPath = environment.path.join(
      environment.linuxApplicationsDir,
--    environment.linuxDesktopEntryName,
+-    URL_HANDLER_DESKTOP_ENTRY_NAME,
 +    desktopEntryName,
    );
  
    const writeDesktopEntry = Effect.gen(function* () {
-@@ -135,7 +139,7 @@ export const make = Effect.gen(function* () {
+@@ -133,7 +137,7 @@ export const make = Effect.gen(function* () {
      Effect.gen(function* () {
        const command = ChildProcess.make(
          "xdg-mime",
--        ["default", environment.linuxDesktopEntryName, `x-scheme-handler/${scheme}`],
+-        ["default", URL_HANDLER_DESKTOP_ENTRY_NAME, `x-scheme-handler/${scheme}`],
 +        ["default", desktopEntryName, `x-scheme-handler/${scheme}`],
          {
            stdin: "ignore",
            stdout: "ignore",
-@@ -168,7 +172,9 @@ export const make = Effect.gen(function* () {
-     if (environment.platform !== "linux") {
+@@ -166,7 +170,9 @@ export const make = Effect.gen(function* () {
+     if (environment.platform !== "linux" || !environment.isPackaged) {
        return;
      }
 -    yield* writeDesktopEntry;
 +    if (!isDebOrRpmInstall) {
 +      yield* writeDesktopEntry;
 +    }
-     if (!environment.isPackaged) return;
      yield* setDefaultHandler;
      yield* logInfo("registered URL scheme handler", { scheme });
-diff --git a/apps/desktop/src/app/DesktopPreReadyPlatform.ts b/apps/desktop/src/app/DesktopPreReadyPlatform.ts
-index c07334f33b..edaf49dab8 100644
---- a/apps/desktop/src/app/DesktopPreReadyPlatform.ts
-+++ b/apps/desktop/src/app/DesktopPreReadyPlatform.ts
-@@ -59,33 +59,41 @@ export const make = Effect.gen(function* () {
-     const linux = platform === "linux" ? resolveEarlyLinuxElectronOptionsFromProcess() : null;
- 
-     if (linux !== null) {
--      // The portal also requires a valid desktop entry. An AppImage update may
--      // have removed the executable referenced by the previous launch's entry.
--      try {
--        const applicationsDir = NodePath.posix.join(
--          process.env.XDG_DATA_HOME?.trim() ||
--            NodePath.posix.join(NodeOS.homedir(), ".local", "share"),
--          "applications",
--        );
--        NodeFS.mkdirSync(applicationsDir, { recursive: true });
--        NodeFS.writeFileSync(
--          NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
--          renderUrlHandlerDesktopEntry({
--            displayName: resolveDesktopAppBranding({
--              isDevelopment: linux.isDevelopment,
--              appVersion: Electron.app.getVersion(),
--            }).displayName,
--            execTarget: process.env.APPIMAGE?.trim() || process.execPath,
--            scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
--          }),
--          "utf8",
--        );
--      } catch {
--        // The URL handler retries with the full environment and logs failures.
-+      const appImageExecTarget = process.env.APPIMAGE?.trim();
-+      const isDebOrRpmInstall =
-+        Electron.app.isPackaged &&
-+        (appImageExecTarget === undefined || appImageExecTarget.length === 0);
-+      if (!isDebOrRpmInstall) {
-+        // The portal also requires a valid desktop entry. An AppImage update may
-+        // have removed the executable referenced by the previous launch's entry.
-+        try {
-+          const applicationsDir = NodePath.posix.join(
-+            process.env.XDG_DATA_HOME?.trim() ||
-+              NodePath.posix.join(NodeOS.homedir(), ".local", "share"),
-+            "applications",
-+          );
-+          NodeFS.mkdirSync(applicationsDir, { recursive: true });
-+          NodeFS.writeFileSync(
-+            NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
-+            renderUrlHandlerDesktopEntry({
-+              displayName: resolveDesktopAppBranding({
-+                isDevelopment: linux.isDevelopment,
-+                appVersion: Electron.app.getVersion(),
-+              }).displayName,
-+              execTarget: appImageExecTarget || process.execPath,
-+              scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
-+            }),
-+            "utf8",
-+          );
-+        } catch {
-+          // The URL handler retries with the full environment and logs failures.
-+        }
-       }
-       // Chromium caches its portal registration during startup. Set the identity
-       // before any asynchronous work can initialize it with Electron's default.
--      Electron.app.setDesktopName(linux.linuxDesktopEntryName);
-+      Electron.app.setDesktopName(
-+        isDebOrRpmInstall ? `${linux.linuxWmClass}.desktop` : linux.linuxDesktopEntryName,
-+      );
-       Electron.app.commandLine.appendSwitch("class", linux.linuxWmClass);
-       if (linux.passwordStore !== null && linuxPasswordStoreCommandLine === null) {
-         Electron.app.commandLine.appendSwitch("password-store", linux.passwordStore);
-diff --git a/apps/desktop/src/snapShot/DesktopSnapShot.ts b/apps/desktop/src/snapShot/DesktopSnapShot.ts
-index d7634f980e..067ac9148a 100644
---- a/apps/desktop/src/snapShot/DesktopSnapShot.ts
-+++ b/apps/desktop/src/snapShot/DesktopSnapShot.ts
-@@ -726,7 +726,10 @@ export const make = Effect.gen(function* () {
-   >();
-   const runPromise = Effect.runPromiseWith(context);
-   const captureDirectory = path.join(environment.stateDir, "snap-shots");
--  const linuxAppId = environment.linuxDesktopEntryName.replace(/\.desktop$/, "");
-+  const isDebOrRpmInstall = environment.isPackaged && Option.isNone(environment.appImagePath);
-+  const linuxAppId = isDebOrRpmInstall
-+    ? environment.linuxWmClass
-+    : environment.linuxDesktopEntryName.replace(/\.desktop$/, "");
-   let shortcutVerified = false;
-   const gnomeSetupPaths = {
-     bundle: environment.isPackaged
+   }).pipe(
