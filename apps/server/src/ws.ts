@@ -115,8 +115,10 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
+import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
@@ -548,6 +550,8 @@ const makeWsRpcLayer = (
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
       const deviceService = yield* DeviceService.DeviceService;
+      const deviceHostContext =
+        yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerService = yield* ProviderService.ProviderService;
@@ -2305,9 +2309,18 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
-            serverSettings
-              .updateSettings(patch)
-              .pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
+            Effect.gen(function* () {
+              const deviceHosts = patch.deviceHosts
+                ? yield* remoteSshDeviceHosts(patch.deviceHosts).pipe(
+                    Effect.provide(deviceHostContext),
+                  )
+                : undefined;
+              const settings = yield* serverSettings.updateSettings({
+                ...patch,
+                ...(deviceHosts ? { deviceHosts } : {}),
+              });
+              return ServerSettings.redactServerSettingsForClient(settings);
+            }),
             {
               "rpc.aggregate": "server",
             },
@@ -3434,8 +3447,14 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
-        const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
-          disableTracing: true,
+        const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
+          const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
+          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(
+            Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
+            Effect.forkScoped,
+          );
+          // @effect-diagnostics-next-line returnEffectInGen:off
+          return httpEffect;
         }).pipe(
           Effect.provide(
             makeWsRpcLayer(
