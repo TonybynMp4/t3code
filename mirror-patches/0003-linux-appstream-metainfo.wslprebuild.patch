@@ -1,8 +1,8 @@
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 848c5806b..95e3f8deb 100644
+index 44d5f0ab1..7dc738f85 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
-@@ -2620,6 +2620,46 @@ export function resolveDesktopProductName(version: string): string {
+@@ -2646,6 +2646,46 @@ export function resolveDesktopProductName(version: string): string {
      : (desktopPackageJson.productName ?? "T3 Code");
  }
  
@@ -49,15 +49,15 @@ index 848c5806b..95e3f8deb 100644
  export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
    platform: typeof BuildPlatform.Type,
    target: string,
-@@ -2638,6 +2678,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
-   // source file was never written fails the electron-builder step.
+@@ -2664,6 +2704,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+   // whose source file was never written fails the electron-builder step.
    wslRuntimeBundled = false,
    arch?: typeof BuildArch.Type,
 +  linuxMetainfoPath?: string,
  ) {
    const buildConfig: Record<string, unknown> = {
      appId: DESKTOP_APP_ID,
-@@ -2786,6 +2827,20 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+@@ -2798,6 +2839,20 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
      buildConfig.win = winConfig;
    }
  
@@ -78,7 +78,7 @@ index 848c5806b..95e3f8deb 100644
    return buildConfig;
  });
  
-@@ -3605,6 +3660,19 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+@@ -3706,6 +3761,19 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
    const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
    yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
  
@@ -98,7 +98,7 @@ index 848c5806b..95e3f8deb 100644
    const configuredMacPasskeySigning =
      options.platform === "mac" && options.signed
        ? yield* Effect.try({
-@@ -3656,7 +3724,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+@@ -3767,7 +3835,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
        ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
        : undefined;
    const stagePackageJson: StagePackageJson = {
@@ -107,9 +107,9 @@ index 848c5806b..95e3f8deb 100644
      version: appVersion,
      buildVersion: appVersion,
      t3codeCommitHash: commitHash,
-@@ -3682,6 +3750,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+@@ -3791,6 +3859,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
          : undefined,
-       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
+       bundlesWslRuntime({ arch: options.arch, prebuildPath: options.wslPrebuild }),
        options.arch,
 +      linuxMetainfoPath,
      ),
