@@ -44,26 +44,35 @@ matching.
 
 ## Variants
 
-Upstream has moved this logic around more than once, into shapes that are
-not textually compatible with each other (same regions rewritten, not just
-context drifting), so a single diff can't apply to both. When that happens we
-keep one `.patch` file per shape as siblings named
+Upstream has moved this logic around more than once, into shapes that are not
+textually compatible with each other (same regions rewritten, not just context
+drifting), so a single diff can't apply to every tag we build. When that
+happens we keep one `.patch` file per shape as siblings named
 `0004-linux-desktop-entry-identity.<variant>.patch`; `apply-mirror-patches.sh`
-tries every variant sharing the `0004` prefix and applies whichever one
-matches the tag being built.
+tries every variant sharing the `0004` prefix and applies whichever one applies
+cleanly to the tag being built.
 
-- `0004-linux-desktop-entry-identity.patch` — the shape above: the entry is
-  written and the identity set from `DesktopPreReadyPlatform.ts`, with
-  `DesktopSnapShot.ts` deriving its own app id independently.
-- `0004-linux-desktop-entry-identity.appidentity.patch` — a later refactor
-  moved handler-entry writing into `DesktopLinuxUrlHandler.ts` behind a
-  hardcoded `t3code-url-handler.desktop` constant, and centralized identity
-  into a new `DesktopAppIdentity.ts` that already sets it unconditionally to
-  `environment.linuxDesktopEntryName` for every Linux install. This variant
-  only needs to stop `DesktopLinuxUrlHandler.ts` from writing (and
-  registering `xdg-mime` against) the redundant hidden entry for `.deb`/`.rpm`
-  installs, since the identity is already correct in this shape.
+- `0004-linux-desktop-entry-identity.patch` — the shape above, where
+  `linuxDesktopEntryName` is the reverse-DNS id (`com.t3tools.T3Code.desktop`):
+  identity is set from `DesktopPreReadyPlatform.ts`, `DesktopLinuxUrlHandler.ts`
+  writes the handler entry, and `DesktopSnapShot.ts` derives its own app id. All
+  three must be switched to `t3code` for a `.deb`/`.rpm` install.
+- `0004-linux-desktop-entry-identity.appidentity.patch` — an earlier shape where
+  `linuxDesktopEntryName` is already `t3code.desktop` and `DesktopAppIdentity.ts`
+  sets the window app id from it unconditionally, so identity is **already**
+  `t3code` for every packaged install. Here the only remaining fix is stopping
+  `DesktopLinuxUrlHandler.ts` from writing (and registering `xdg-mime` against)
+  the redundant hidden `t3code-url-handler.desktop` entry.
 
 If upstream reshuffles again and neither variant applies, add a new
-`.<variant>.patch` sibling for the new shape rather than replacing an
-existing one — another currently-supported tag may still need it.
+`.<variant>.patch` sibling for the new shape rather than replacing an existing
+one — another currently-supported tag may still need it.
+
+Any new variant must satisfy the whole invariant above, not part of it — in
+particular the window app id **must** end up as `t3code` for a packaged,
+non-AppImage install (that is the fix), not only stop writing the hidden entry.
+Verify the shape's identity path actually adopts `t3code` before trusting a
+variant: a refactor that centralizes identity elsewhere may still be feeding it
+the reverse-DNS `linuxDesktopEntryName`, which silently reintroduces the
+second-icon bug. Confirm against the shape's real source, not an assumption
+about where identity moved.

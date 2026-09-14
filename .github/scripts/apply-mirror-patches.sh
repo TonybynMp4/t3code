@@ -41,12 +41,34 @@ done
 for prefix in "${prefixes[@]}"; do
   variants=(mirror-patches/"$prefix"-*.patch)
   chosen=""
+
+  # Prefer a variant that applies exactly, with a plain apply and no merge.
+  # A plain `git apply --check` can never leave conflict markers, so it only
+  # passes for the variant whose shape actually matches this tag.
+  # `git apply --3way --check` cannot stand in here: it returns 0 even when
+  # the 3-way merge it previews would leave conflicts, so it happily picks a
+  # variant meant for a different shape (the real apply below would then fail
+  # with conflicts, while --check silently reports success).
   for variant in "${variants[@]}"; do
-    if git apply --3way --check "$variant" >/dev/null 2>&1; then
+    if git apply --check "$variant" >/dev/null 2>&1; then
       chosen="$variant"
       break
     fi
   done
+
+  # None applied exactly. Fall back to a 3-way preview so a patch keeps
+  # working while upstream edits the code *around* it (context drift). This
+  # can still pick a variant that only merges with conflicts; if so, the real
+  # apply below fails loudly with the rejects in the log — the intended "one
+  # build fails, go rewrite the patch" signal.
+  if [[ -z "$chosen" ]]; then
+    for variant in "${variants[@]}"; do
+      if git apply --3way --check "$variant" >/dev/null 2>&1; then
+        chosen="$variant"
+        break
+      fi
+    done
+  fi
 
   # None of the variants apply. Re-run the first one verbosely so the
   # failure (and any conflict markers left by --3way) end up in the log for
