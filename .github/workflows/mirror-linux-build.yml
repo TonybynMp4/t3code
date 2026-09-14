@@ -314,10 +314,15 @@ jobs:
 
           ls -laR release-publish
 
+      # The tag belongs in the name because mirror-sync calls this workflow
+      # twice (stable and nightly) from one parent run, and a reusable workflow
+      # shares its caller's artifact namespace. Without it both trains upload
+      # "linux-deb-x64" into the same namespace and each publish job downloads
+      # whichever package landed there first.
       - name: Upload release assets
         uses: actions/upload-artifact@v7
         with:
-          name: linux-${{ matrix.target }}-${{ matrix.arch }}
+          name: linux-${{ inputs.tag }}-${{ matrix.target }}-${{ matrix.arch }}
           path: release-publish/**
           if-no-files-found: error
 
@@ -337,15 +342,17 @@ jobs:
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
-          pattern: linux-*
+          pattern: linux-${{ inputs.tag }}-*
           merge-multiple: true
           path: release-assets
 
       - name: Merge update manifests
         shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          python3 .github/scripts/merge-linux-update-manifests.py release-assets
+          python3 .github/scripts/merge-linux-update-manifests.py release-assets "${TAG#v}"
           rm -rf release-assets/manifests
           ls -la release-assets
 

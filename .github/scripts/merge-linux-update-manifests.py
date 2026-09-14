@@ -26,11 +26,12 @@ TARGET_PRIORITY = ("deb", "rpm")
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} <release-assets-dir>", file=sys.stderr)
+    if len(argv) not in (2, 3):
+        print(f"usage: {argv[0]} <release-assets-dir> [expected-version]", file=sys.stderr)
         return 2
 
     assets = Path(argv[1])
+    expected_version = argv[2] if len(argv) == 3 else None
     manifest_dir = assets / "manifests"
     if not manifest_dir.is_dir():
         print(f"No manifests directory in {assets}", file=sys.stderr)
@@ -81,6 +82,18 @@ def main(argv: list[str]) -> int:
             # Mismatched versions mean the matrix built different tags, and a
             # merged feed would advertise an update that does not exist.
             print(f"{feed}: conflicting versions {sorted(versions)}", file=sys.stderr)
+            return 1
+
+        # A feed that names a package this run did not build publishes an
+        # update button that 404s, which no later check here would notice.
+        missing = [entry["url"] for entry in files if not (assets / entry["url"]).is_file()]
+        if missing:
+            print(f"{feed}: no such artifact {', '.join(missing)}", file=sys.stderr)
+            return 1
+
+        version = next(iter(versions))
+        if expected_version is not None and version != expected_version:
+            print(f"{feed}: built {version}, expected {expected_version}", file=sys.stderr)
             return 1
 
         merged["files"] = files
