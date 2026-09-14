@@ -171,9 +171,7 @@ function dropExpiredWindows(
  * (executable missing, spawn failure, timeout), and several drivers never
  * populate it at all. That omission carries no information about the
  * account's actual windows, so it is treated the same as a failed probe: the
- * last published snapshot stands. There is no reliable clock to expire
- * windows against in this case (no probe ran at all), so it is the one path
- * that reuses `published` without checking window expiry.
+ * last published snapshot stands.
  *
  * `unsupported` gets the same treatment once windows are on screen, but only
  * for providers that pass `keepPublishedWindowsWhenProbeUnsupported`. A probe
@@ -186,14 +184,18 @@ function dropExpiredWindows(
  * an API-key account) is authoritative and must replace stale windows from a
  * previous account.
  *
- * Both of the "reuse published windows" paths above still need to age those
- * windows out: an interval probe runs whether or not a turn ever streams a
- * fresh reading, so a Claude Team/Enterprise session bar that reset an hour
- * ago must not keep showing last hour's percentage forever. Each probe that
- * actually ran carries its own `checkedAt`, so that timestamp (not wall
- * clock) is the reconciliation point — deterministic, and correct across any
- * number of consecutive unsupported or failed probes since each one re-checks
- * the surviving windows against its own, later `checkedAt`. If every window
+ * Every "reuse published windows" path above still needs to age those windows
+ * out: an interval probe runs whether or not a turn ever streams a fresh
+ * reading, so a Claude Team/Enterprise session bar that reset an hour ago
+ * must not keep showing last hour's percentage forever. A probe that read
+ * limits carries its own `checkedAt`, and that timestamp is the
+ * reconciliation point in preference to `asOf` (the moment the refresh
+ * landed): it is the probe's own view of the account, and it keeps the
+ * result deterministic. A probe that reported nothing has no such timestamp,
+ * so `asOf` ages its preserved windows instead — otherwise a provider whose
+ * executable went missing would show the same percentages until the process
+ * restarts. Either way consecutive failures keep converging, since each
+ * refresh re-checks the survivors against a later point. If every window
  * expires, there is nothing left to preserve and the probe's own result wins.
  *
  * A successful probe replaces the published windows outright, including any
@@ -207,16 +209,22 @@ function dropExpiredWindows(
 export function resolveUsageLimitsAfterProbe(input: {
   readonly published: ServerProviderUsageLimits | undefined;
   readonly probed: ServerProviderUsageLimits | undefined;
+  readonly asOf: string;
   readonly keepPublishedWindowsWhenProbeUnsupported?: boolean;
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
-  if (probed === undefined && published && !published.unavailable && published.windows.length > 0) {
-    return published;
-  }
   const freshPublished =
-    probed && published && !published.unavailable
-      ? dropExpiredWindows(published, probed.checkedAt)
+    published && !published.unavailable
+      ? dropExpiredWindows(published, probed?.checkedAt ?? input.asOf)
       : published;
+  if (
+    probed === undefined &&
+    freshPublished &&
+    !freshPublished.unavailable &&
+    freshPublished.windows.length > 0
+  ) {
+    return freshPublished;
+  }
   if (
     input.keepPublishedWindowsWhenProbeUnsupported &&
     probed?.unavailable &&
