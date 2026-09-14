@@ -132,4 +132,56 @@ describe("resolveUsageLimitsAfterProbe", () => {
       unsupported,
     );
   });
+
+  // An interval probe runs whether or not a turn ever streams a fresh
+  // reading, so a preserved window has to age out once its own resetsAt
+  // passes rather than showing last window's percentage forever.
+  it("drops a preserved window once its own resetsAt has passed", () => {
+    const expiredSession = { ...session, resetsAt: "2026-09-03T11:00:00.000Z" };
+    const partiallyExpired = { checkedAt, windows: [expiredSession, weekly] };
+    const laterUnsupported = {
+      checkedAt: "2026-09-03T11:30:00.000Z",
+      windows: [],
+      unavailable: { reason: "unsupported" as const },
+    };
+    expect(
+      resolveUsageLimitsAfterProbe({
+        published: partiallyExpired,
+        probed: laterUnsupported,
+        keepPublishedWindowsWhenProbeUnsupported: true,
+      }),
+    ).toEqual({ checkedAt, windows: [weekly] });
+  });
+
+  it("falls back to the probe result once every preserved window has expired", () => {
+    const expiredOnly = {
+      checkedAt,
+      windows: [{ ...session, resetsAt: "2026-09-03T11:00:00.000Z" }],
+    };
+    const laterUnsupported = {
+      checkedAt: "2026-09-03T11:30:00.000Z",
+      windows: [],
+      unavailable: { reason: "unsupported" as const },
+    };
+    expect(
+      resolveUsageLimitsAfterProbe({
+        published: expiredOnly,
+        probed: laterUnsupported,
+        keepPublishedWindowsWhenProbeUnsupported: true,
+      }),
+    ).toBe(laterUnsupported);
+  });
+
+  it("ages preserved windows out across a failed probe too", () => {
+    const expiredSession = { ...session, resetsAt: "2026-09-03T11:00:00.000Z" };
+    const partiallyExpired = { checkedAt, windows: [expiredSession, weekly] };
+    const laterFailed = {
+      checkedAt: "2026-09-03T11:30:00.000Z",
+      windows: [],
+      unavailable: { reason: "probeFailed" as const },
+    };
+    expect(
+      resolveUsageLimitsAfterProbe({ published: partiallyExpired, probed: laterFailed }),
+    ).toEqual({ checkedAt, windows: [weekly] });
+  });
 });

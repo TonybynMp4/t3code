@@ -112,6 +112,29 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
 }
 
 /**
+ * Drop windows from a preserved snapshot that reset at or before `asOf`. A
+ * probe carries no information for windows it did not read, so once a
+ * window's own `resetsAt` has passed there is nothing to hold onto: the
+ * value on screen is definitely wrong, not just possibly stale. Returns the
+ * input unchanged (same reference) when nothing expired, so the "keep
+ * publishing the same object" identity checks below still hold.
+ */
+function dropExpiredWindows(
+  limits: ServerProviderUsageLimits,
+  asOf: string,
+): ServerProviderUsageLimits {
+  if (!limits.windows.some((window) => window.resetsAt !== undefined && window.resetsAt <= asOf)) {
+    return limits;
+  }
+  return {
+    ...limits,
+    windows: limits.windows.filter(
+      (window) => window.resetsAt === undefined || window.resetsAt > asOf,
+    ),
+  };
+}
+
+/**
  * Choose what to publish after a status probe finishes. A probe that failed
  * this time must not wipe bars a previous probe or a turn already
  * established, so the last good snapshot stays.
@@ -120,7 +143,9 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
  * (executable missing, spawn failure, timeout), and several drivers never
  * populate it at all. That omission carries no information about the
  * account's actual windows, so it is treated the same as a failed probe: the
- * last published snapshot stands.
+ * last published snapshot stands. There is no reliable clock to expire
+ * windows against in this case (no probe ran at all), so it is the one path
+ * that reuses `published` without checking `resetsAt`.
  *
  * `unsupported` gets the same treatment once windows are on screen, but only
  * for providers that pass `keepPublishedWindowsWhenProbeUnsupported`. A probe
@@ -132,6 +157,16 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
  * Codex probe reporting `unsupported` (for example, right after switching to
  * an API-key account) is authoritative and must replace stale windows from a
  * previous account.
+ *
+ * Both of the "reuse published windows" paths above still need to age those
+ * windows out: an interval probe runs whether or not a turn ever streams a
+ * fresh reading, so a Claude Team/Enterprise session bar that reset an hour
+ * ago must not keep showing last hour's percentage forever. Each probe that
+ * actually ran carries its own `checkedAt`, so that timestamp (not wall
+ * clock) is the reconciliation point — deterministic, and correct across any
+ * number of consecutive unsupported or failed probes since each one re-checks
+ * the surviving windows against its own, later `checkedAt`. If every window
+ * expires, there is nothing left to preserve and the probe's own result wins.
  *
  * A successful probe replaces the published windows outright, including any
  * runtime update that landed while it was running. That is a deliberate
@@ -150,17 +185,26 @@ export function resolveUsageLimitsAfterProbe(input: {
   if (probed === undefined && published && !published.unavailable && published.windows.length > 0) {
     return published;
   }
+  const freshPublished =
+    probed && published && !published.unavailable
+      ? dropExpiredWindows(published, probed.checkedAt)
+      : published;
   if (
     input.keepPublishedWindowsWhenProbeUnsupported &&
     probed?.unavailable &&
-    published &&
-    !published.unavailable &&
-    published.windows.length > 0
+    freshPublished &&
+    !freshPublished.unavailable &&
+    freshPublished.windows.length > 0
   ) {
-    return published;
+    return freshPublished;
   }
-  if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
-    return published;
+  if (
+    probed?.unavailable?.reason === "probeFailed" &&
+    freshPublished &&
+    !freshPublished.unavailable &&
+    freshPublished.windows.length > 0
+  ) {
+    return freshPublished;
   }
   return probed;
 }
