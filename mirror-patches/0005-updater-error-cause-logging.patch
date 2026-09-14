@@ -1,0 +1,36 @@
+diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
+index c35b52e834..f898f8d2fe 100644
+--- a/apps/desktop/src/updates/DesktopUpdates.ts
++++ b/apps/desktop/src/updates/DesktopUpdates.ts
+@@ -6,6 +6,7 @@ import {
+   type DesktopUpdateCheckResult,
+   type DesktopUpdateState,
+ } from "@t3tools/contracts";
++import { describeReadinessCause as describeLogCause } from "@t3tools/shared/httpReadiness";
+ import * as Cause from "effect/Cause";
+ import * as Context from "effect/Context";
+ import * as DateTime from "effect/DateTime";
+@@ -428,6 +429,7 @@ export const make = Effect.gen(function* () {
+             yield* logUpdaterError(error.message, {
+               errorTag: error._tag,
+               channel: error.channel,
++              cause: describeLogCause(error.cause),
+             });
+             return true;
+           }),
+@@ -471,6 +473,7 @@ export const make = Effect.gen(function* () {
+             yield* logUpdaterError(error.message, {
+               errorTag: error._tag,
+               channel: error.channel,
++              cause: describeLogCause(error.cause),
+             });
+             return { accepted: true, completed: false };
+           },
+@@ -614,6 +617,7 @@ export const make = Effect.gen(function* () {
+                   channel: error.channel,
+                   isSilent: error.isSilent,
+                   isForceRunAfter: error.isForceRunAfter,
++                  cause: describeLogCause(error.cause),
+                 });
+                 return { accepted: true, completed: false, failed: true };
+               },
