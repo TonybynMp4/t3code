@@ -112,26 +112,54 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
 }
 
 /**
- * Drop windows from a preserved snapshot that reset at or before `asOf`. A
- * probe carries no information for windows it did not read, so once a
- * window's own `resetsAt` has passed there is nothing to hold onto: the
- * value on screen is definitely wrong, not just possibly stale. Returns the
- * input unchanged (same reference) when nothing expired, so the "keep
- * publishing the same object" identity checks below still hold.
+ * The moment a window's percentage stops describing anything: its rolling
+ * period rolls over and the quota it measured is gone. `resetsAt` names that
+ * moment outright, and a window without one is bounded instead by how long
+ * its period runs from the read that produced it. A window carrying neither
+ * could be any age, so it gets no expiry.
+ */
+export const usageWindowExpiresAt = (
+  window: ServerProviderUsageWindow,
+  checkedAt: string,
+): number | undefined => {
+  if (window.resetsAt !== undefined) {
+    const resetsAt = Date.parse(window.resetsAt);
+    return Number.isNaN(resetsAt) ? undefined : resetsAt;
+  }
+  if (window.windowDurationMins === undefined) {
+    return undefined;
+  }
+  const readAt = Date.parse(checkedAt);
+  return Number.isNaN(readAt) ? undefined : readAt + window.windowDurationMins * 60_000;
+};
+
+/**
+ * Drop windows from a preserved snapshot whose period has rolled over by
+ * `asOf`. A probe carries no information for windows it did not read, so once
+ * a window has expired there is nothing to hold onto: the value on screen is
+ * definitely wrong, not just possibly stale. Expiry is the same calculation
+ * the cache hydrates against, so a window bounded only by
+ * `windowDurationMins` ages out from the `checkedAt` that recorded it rather
+ * than living forever. Returns the input unchanged (same reference) when
+ * nothing expired, so the "keep publishing the same object" identity checks
+ * below still hold.
  */
 function dropExpiredWindows(
   limits: ServerProviderUsageLimits,
   asOf: string,
 ): ServerProviderUsageLimits {
-  if (!limits.windows.some((window) => window.resetsAt !== undefined && window.resetsAt <= asOf)) {
+  const asOfMillis = Date.parse(asOf);
+  if (Number.isNaN(asOfMillis)) {
     return limits;
   }
-  return {
-    ...limits,
-    windows: limits.windows.filter(
-      (window) => window.resetsAt === undefined || window.resetsAt > asOf,
-    ),
+  const isLive = (window: ServerProviderUsageWindow) => {
+    const expiresAt = usageWindowExpiresAt(window, limits.checkedAt);
+    return expiresAt === undefined || expiresAt > asOfMillis;
   };
+  if (limits.windows.every(isLive)) {
+    return limits;
+  }
+  return { ...limits, windows: limits.windows.filter(isLive) };
 }
 
 /**
@@ -145,7 +173,7 @@ function dropExpiredWindows(
  * account's actual windows, so it is treated the same as a failed probe: the
  * last published snapshot stands. There is no reliable clock to expire
  * windows against in this case (no probe ran at all), so it is the one path
- * that reuses `published` without checking `resetsAt`.
+ * that reuses `published` without checking window expiry.
  *
  * `unsupported` gets the same treatment once windows are on screen, but only
  * for providers that pass `keepPublishedWindowsWhenProbeUnsupported`. A probe

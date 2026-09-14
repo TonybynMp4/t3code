@@ -3,7 +3,6 @@ import {
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
   type ServerProviderUsageLimits,
-  type ServerProviderUsageWindow,
 } from "@t3tools/contracts";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Effect from "effect/Effect";
@@ -12,6 +11,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { usageWindowExpiresAt } from "./providerUsageLimits.ts";
 
 const decodeProviderStatusCache = Schema.decodeUnknownEffect(
   Schema.fromJsonString(ServerProviderSchema),
@@ -59,28 +59,6 @@ export const orderProviderSnapshots = (
       (left.displayName ?? "").localeCompare(right.displayName ?? "") ||
       left.instanceId.localeCompare(right.instanceId),
   );
-
-/**
- * The moment a cached window's percentage stops describing anything: its
- * rolling period rolls over and the quota it measured is gone. `resetsAt`
- * names that moment outright, and a window without one is bounded instead by
- * how long its period runs from the read that cached it. A window carrying
- * neither could be any age, so it gets no expiry and is never replayed.
- */
-const usageWindowExpiresAt = (
-  window: ServerProviderUsageWindow,
-  checkedAt: string,
-): number | undefined => {
-  if (window.resetsAt !== undefined) {
-    const resetsAt = Date.parse(window.resetsAt);
-    return Number.isNaN(resetsAt) ? undefined : resetsAt;
-  }
-  if (window.windowDurationMins === undefined) {
-    return undefined;
-  }
-  const readAt = Date.parse(checkedAt);
-  return Number.isNaN(readAt) ? undefined : readAt + window.windowDurationMins * 60_000;
-};
 
 /**
  * The bars to put on screen before this run's probe has answered, or
