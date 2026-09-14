@@ -172,6 +172,24 @@ describe("resolveUsageLimitsAfterProbe", () => {
     ).toBe(laterUnsupported);
   });
 
+  // A window streamed by a turn often carries only its length, never a
+  // reset timestamp; it has to age out from the read that recorded it.
+  it("drops a preserved window bounded only by windowDurationMins", () => {
+    const streamed = { checkedAt, windows: [{ ...session, resetsAt: undefined }, weekly] };
+    const laterUnsupported = {
+      checkedAt: "2026-09-03T18:00:00.000Z",
+      windows: [],
+      unavailable: { reason: "unsupported" as const },
+    };
+    expect(
+      resolveUsageLimitsAfterProbe({
+        published: streamed,
+        probed: laterUnsupported,
+        keepPublishedWindowsWhenProbeUnsupported: true,
+      }),
+    ).toEqual({ checkedAt, windows: [weekly] });
+  });
+
   it("ages preserved windows out across a failed probe too", () => {
     const expiredSession = { ...session, resetsAt: "2026-09-03T11:00:00.000Z" };
     const partiallyExpired = { checkedAt, windows: [expiredSession, weekly] };
