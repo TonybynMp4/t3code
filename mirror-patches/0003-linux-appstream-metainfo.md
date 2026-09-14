@@ -62,3 +62,25 @@ both together.
 
 If it stops applying, the behaviour to restore is: render the component, write
 it somewhere outside the stage, and hand its absolute path to both fpm targets.
+
+## Variants
+
+Upstream reshuffled `createBuildConfig` / `buildDesktopArtifact` between the
+tags we build, so one diff cannot apply to every tag. As with 0004, we keep one
+`.patch` per shape named `0003-linux-appstream-metainfo.<variant>.patch`;
+`apply-mirror-patches.sh` picks whichever applies cleanly to the tag being
+built. The two differ only in context and offsets — the metainfo behaviour they
+add is identical, so a change to one must be mirrored into the other.
+
+Tell the shapes apart by the `bundlesWslRuntime` call in the stage package
+json:
+
+- `0003-linux-appstream-metainfo.patch` — the current shape, where it is
+  `bundlesWslRuntime({ platform, runtimeArchivePath })` (nightly, `v0.0.41-*`).
+- `0003-linux-appstream-metainfo.wslprebuild.patch` — the older shape, where it
+  is `bundlesWslRuntime({ arch, prebuildPath })` (stable, `v0.0.40`).
+
+CI checks patches against a shallow checkout, so the pre-image blobs `git apply
+--3way` wants are absent and application falls back to a plain, exact match. A
+variant that only merges with `--3way` in a full clone will still fail the
+build; verify a new variant with a plain `git apply --check` against the tag.

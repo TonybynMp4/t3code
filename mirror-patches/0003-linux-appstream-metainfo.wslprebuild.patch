@@ -1,0 +1,117 @@
+diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
+index 44d5f0ab1..7dc738f85 100644
+--- a/scripts/build-desktop-artifact.ts
++++ b/scripts/build-desktop-artifact.ts
+@@ -2646,6 +2646,46 @@ export function resolveDesktopProductName(version: string): string {
+     : (desktopPackageJson.productName ?? "T3 Code");
+ }
+ 
++export const APPSTREAM_METAINFO_FILENAME = `${DESKTOP_APP_ID}.metainfo.xml`;
++export const DESKTOP_LINUX_PACKAGE_NAME = "t3code";
++
++export function renderAppStreamMetainfo(input: {
++  readonly version: string;
++  readonly releaseDate: string;
++}): string {
++  return `<?xml version="1.0" encoding="UTF-8"?>
++<component type="desktop-application">
++  <id>${DESKTOP_APP_ID}</id>
++  <pkgname>${DESKTOP_LINUX_PACKAGE_NAME}</pkgname>
++  <metadata_license>CC0-1.0</metadata_license>
++  <project_license>MIT</project_license>
++  <name>${escapeXml(resolveDesktopProductName(input.version))}</name>
++  <summary>The open-source control plane for coding agents</summary>
++  <description>
++    <p>
++      Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscriptions.
++    </p>
++  </description>
++  <developer id="io.github.tonybynmp4">
++    <name>T3 Tools</name>
++  </developer>
++  <launchable type="desktop-id">t3code.desktop</launchable>
++  <url type="homepage">https://github.com/TonybynMp4/t3code</url>
++  <url type="bugtracker">https://github.com/TonybynMp4/t3code/issues</url>
++  <content_rating type="oars-1.1" />
++  <screenshots>
++    <screenshot type="default">
++      <image type="source" width="1728" height="1080">https://raw.githubusercontent.com/TonybynMp4/t3code/main/mirror-assets/screenshot-desktop.png</image>
++      <caption>Thread list, an agent conversation, and the diff for the current turn</caption>
++    </screenshot>
++  </screenshots>
++  <releases>
++    <release version="${escapeXml(input.version)}" date="${escapeXml(input.releaseDate)}" />
++  </releases>
++</component>
++`;
++}
++
+ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+   platform: typeof BuildPlatform.Type,
+   target: string,
+@@ -2664,6 +2704,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+   // whose source file was never written fails the electron-builder step.
+   wslRuntimeBundled = false,
+   arch?: typeof BuildArch.Type,
++  linuxMetainfoPath?: string,
+ ) {
+   const buildConfig: Record<string, unknown> = {
+     appId: DESKTOP_APP_ID,
+@@ -2798,6 +2839,20 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+     buildConfig.win = winConfig;
+   }
+ 
++  if (platform === "linux" && linuxMetainfoPath) {
++    const metainfoFpmArgs = [
++      `${linuxMetainfoPath}=/usr/share/metainfo/${APPSTREAM_METAINFO_FILENAME}`,
++    ];
++    buildConfig.deb = {
++      ...(buildConfig.deb as Record<string, unknown> | undefined),
++      fpm: metainfoFpmArgs,
++    };
++    buildConfig.rpm = {
++      ...(buildConfig.rpm as Record<string, unknown> | undefined),
++      fpm: metainfoFpmArgs,
++    };
++  }
++
+   return buildConfig;
+ });
+ 
+@@ -3706,6 +3761,19 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
+   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
+ 
++  let linuxMetainfoPath: string | undefined;
++  if (options.platform === "linux") {
++    const metainfoDir = yield* fs.makeTempDirectory({ prefix: "t3code-metainfo-" });
++    linuxMetainfoPath = path.join(metainfoDir, APPSTREAM_METAINFO_FILENAME);
++    yield* fs.writeFileString(
++      linuxMetainfoPath,
++      renderAppStreamMetainfo({
++        version: appVersion,
++        releaseDate: new Date().toISOString().slice(0, 10),
++      }),
++    );
++  }
++
+   const configuredMacPasskeySigning =
+     options.platform === "mac" && options.signed
+       ? yield* Effect.try({
+@@ -3767,7 +3835,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
+       : undefined;
+   const stagePackageJson: StagePackageJson = {
+-    name: "t3code",
++    name: DESKTOP_LINUX_PACKAGE_NAME,
+     version: appVersion,
+     buildVersion: appVersion,
+     t3codeCommitHash: commitHash,
+@@ -3791,6 +3859,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+         : undefined,
+       bundlesWslRuntime({ arch: options.arch, prebuildPath: options.wslPrebuild }),
+       options.arch,
++      linuxMetainfoPath,
+     ),
+     dependencies: stageDependencies,
+     devDependencies: {
