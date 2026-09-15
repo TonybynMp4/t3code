@@ -398,10 +398,36 @@ jobs:
           gh api "repos/pingdotgg/t3code/releases/tags/$TAG" --jq '.body // ""' \
             > upstream-notes.md 2>/dev/null || : > upstream-notes.md
 
+          # Body layout is tuned for the desktop update popup, which parses this
+          # text: it collects the list items above the first "Full Changelog" /
+          # "New Contributors" heading, keeps the last few, and reverses them
+          # (apps/desktop/src/updates/releaseNotes.ts). So the upstream changelog
+          # goes first, and every mirror-specific note goes under the "## Full
+          # Changelog" heading, which stops that parser and keeps the popup
+          # showing only real upstream changes instead of this fork's boilerplate.
+          # The warning heading at the very top is a heading, which the parser
+          # skips, so it still leads the GitHub page without polluting the popup.
+          # Upstream's own "Full Changelog:" line is pulled out and re-emitted as
+          # that heading's link so the compare URL is not duplicated.
+          compare_url="$(grep -oiE 'https://github.com/[^ )]+/compare/[^ )]+' upstream-notes.md | head -1 || true)"
+          upstream_body="$(grep -viE '^[*_ ]*full changelog[*_ ]*:' upstream-notes.md || true)"
+
           {
-            echo "Unofficial Linux packages built from upstream [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG)."
+            echo "## ⚠️ Unofficial Linux build (\`.deb\` / \`.rpm\`) — not official T3 Code"
             echo
-            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at that tag, because upstream CI ships a Linux x64 AppImage only. This tag is $channel_note."
+            if grep -q '[^[:space:]]' <<<"$upstream_body"; then
+              printf '%s\n' "$upstream_body"
+              echo
+            fi
+            echo "## Full Changelog"
+            echo
+            if [ -n "$compare_url" ]; then
+              echo "$compare_url"
+              echo
+            fi
+            echo "---"
+            echo
+            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG), because upstream CI ships a Linux x64 AppImage only. This tag is $channel_note."
             echo
             echo "- Formats: \`.deb\` and \`.rpm\`, x64 and arm64"
             echo "- **Auto-update works**, from this fork's releases. Installs prompt once for your password (via \`pkexec\`) because the update is applied with \`dpkg\`/\`rpm\`, the same way Windows prompts through UAC. A desktop without \`pkexec\` cannot auto-update; reinstall the newer package by hand."
@@ -409,16 +435,6 @@ jobs:
             echo "- Cloud sign-in and T3 Connect are disabled in these builds. See MIRROR.md."
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
-
-            if grep -q '[^[:space:]]' upstream-notes.md; then
-              echo
-              echo "<details>"
-              echo "<summary>Upstream changelog for $TAG</summary>"
-              echo
-              cat upstream-notes.md
-              echo
-              echo "</details>"
-            fi
           } > release-notes.md
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
