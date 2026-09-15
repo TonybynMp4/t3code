@@ -287,7 +287,9 @@ export default function ProjectScriptsControl({
                 {primaryScript.name}
               </span>
             </TooltipTrigger>
-            <TooltipPopup side="top">Run {primaryScript.name}</TooltipPopup>
+            <TooltipPopup side="top" className="whitespace-nowrap">
+              Run {primaryScript.name}
+            </TooltipPopup>
           </Tooltip>
           <GroupSeparator className="hidden @3xl/header-actions:block" />
           <Menu
@@ -296,11 +298,29 @@ export default function ProjectScriptsControl({
               setActionsMenuOpen({ presentation, scripts: open, imports: false })
             }
           >
-            <MenuTrigger
-              render={<Button size="icon-xs" variant="outline" aria-label="Script actions" />}
-            >
-              <ChevronDownIcon className="size-4" />
-            </MenuTrigger>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <MenuTrigger
+                    render={
+                      <Button
+                        size="icon-xs"
+                        variant="outline"
+                        aria-label="Script actions"
+                        // The tooltip wrapper replaces data-slot="menu-trigger",
+                        // so themed toolbar styling needs its own hook.
+                        data-toolbar-control=""
+                      />
+                    }
+                  />
+                }
+              >
+                <ChevronDownIcon className="size-4" />
+              </TooltipTrigger>
+              <TooltipPopup side="top" className="whitespace-nowrap">
+                Script actions
+              </TooltipPopup>
+            </Tooltip>
             <MenuPopup align="end">{scriptItems}</MenuPopup>
           </Menu>
         </Group>
@@ -347,7 +367,9 @@ export default function ProjectScriptsControl({
               Add action
             </span>
           </TooltipTrigger>
-          <TooltipPopup side="top">Add action</TooltipPopup>
+          <TooltipPopup side="top" className="whitespace-nowrap">
+            Add action
+          </TooltipPopup>
         </Tooltip>
       )}
 
