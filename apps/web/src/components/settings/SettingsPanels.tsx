@@ -575,6 +575,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
         ? ["Show skills in slash menu"]
         : []),
+      ...(settings.showProviderUsageInComposer !==
+      DEFAULT_UNIFIED_SETTINGS.showProviderUsageInComposer
+        ? ["Show usage in chat"]
+        : []),
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer on scroll"]
         : []),
@@ -663,6 +667,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
+      settings.showProviderUsageInComposer,
       settings.timestampFormat,
       settings.notificationMode,
       settings.inAppNotificationsEnabled,
@@ -747,6 +752,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+      showProviderUsageInComposer: DEFAULT_UNIFIED_SETTINGS.showProviderUsageInComposer,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
@@ -2558,6 +2564,34 @@ export function GeneralSettingsPanel() {
                 updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
               }
               aria-label="Show skills in slash menu"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("usage-in-chat")}
+          description="Show remaining session and weekly usage for the current provider next to the chat box, after the first message in a thread."
+          resetAction={
+            settings.showProviderUsageInComposer !==
+            DEFAULT_UNIFIED_SETTINGS.showProviderUsageInComposer ? (
+              <SettingResetButton
+                label="usage in chat"
+                onClick={() =>
+                  updateSettings({
+                    showProviderUsageInComposer:
+                      DEFAULT_UNIFIED_SETTINGS.showProviderUsageInComposer,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showProviderUsageInComposer}
+              onCheckedChange={(checked) =>
+                updateSettings({ showProviderUsageInComposer: Boolean(checked) })
+              }
+              aria-label="Show usage in chat"
             />
           }
         />

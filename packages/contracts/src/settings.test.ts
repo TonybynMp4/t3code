@@ -227,6 +227,15 @@ describe("ClientSettings default diff file state", () => {
   });
 });
 
+describe("ClientSettings composer usage", () => {
+  it("keeps provider usage out of the chat box until opted in", () => {
+    expect(decodeClientSettings({}).showProviderUsageInComposer).toBe(false);
+    expect(
+      decodeClientSettingsPatch({ showProviderUsageInComposer: true }).showProviderUsageInComposer,
+    ).toBe(true);
+  });
+});
+
 describe("ClientSettings diff colors", () => {
   it("keeps red and green for existing settings without a saved palette", () => {
     expect(decodeClientSettings({}).diffColorScheme).toBe("red-green");
