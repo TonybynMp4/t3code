@@ -242,12 +242,20 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       return favorites.length > 0 ? "favorites" : props.activeInstanceId;
     },
   );
+  // Create a Set for efficient lookup. Favorites are keyed by
+  // `${instanceId}:${slug}`; the storage schema widened from ProviderDriverKind
+  // to ProviderInstanceId so pre-migration favorites keyed by driver slugs
+  // (e.g. `"codex:gpt-5"`) still resolve — the default instance id equals
+  // the driver slug.
+  const favoritesSet = useMemo(() => {
+    return new Set(favorites.map((fav) => providerModelKey(fav.provider, fav.model)));
+  }, [favorites]);
   const [expandedLegacyInstances, setExpandedLegacyInstances] = useState(() => {
     // Auto-expand the legacy group only when the active model actually lives
     // there. A favorited legacy model is hoisted into the main list, so
     // expanding the group for it would open an unrelated section.
-    const activeIsFavorite = favorites.some(
-      (fav) => fav.provider === props.activeInstanceId && fav.model === activeModelSlug,
+    const activeIsFavorite = favoritesSet.has(
+      providerModelKey(props.activeInstanceId, activeModelSlug),
     );
     return new Set<ProviderInstanceId>(
       !activeIsFavorite &&
@@ -289,15 +297,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       window.clearTimeout(timeout);
     };
   }, [focusSearchInput]);
-
-  // Create a Set for efficient lookup. Favorites are keyed by
-  // `${instanceId}:${slug}`; the storage schema widened from ProviderDriverKind
-  // to ProviderInstanceId so pre-migration favorites keyed by driver slugs
-  // (e.g. `"codex:gpt-5"`) still resolve — the default instance id equals
-  // the driver slug.
-  const favoritesSet = useMemo(() => {
-    return new Set(favorites.map((fav) => providerModelKey(fav.provider, fav.model)));
-  }, [favorites]);
 
   /**
    * Lookup table keyed by `instanceId`. Used for display name + driver
