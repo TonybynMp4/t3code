@@ -45,7 +45,11 @@ import {
   isProviderInstancePickerVisible,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
-import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import {
+  partitionLegacyModels,
+  providerModelKey,
+  sortProviderModelItems,
+} from "../../modelOrdering";
 
 type ModelPickerItem = {
   slug: string;
@@ -522,8 +526,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     if (isSearching || selectedInstanceId === "favorites") {
       return null;
     }
-    const currentModels = filteredModels.filter((model) => !model.isLegacy);
-    const legacyModels = filteredModels.filter((model) => model.isLegacy);
+    // Favorited models are hoisted to the top, and that hoist has to win over
+    // the legacy split: a favorited legacy model stays in the main list rather
+    // than being buried in the collapsed legacy group. Unfavoriting it drops it
+    // back into the legacy section on the next render.
+    const { current: currentModels, legacy: legacyModels } = partitionLegacyModels(
+      filteredModels,
+      (model) => favoritesSet.has(providerModelKey(model.instanceId, model.slug)),
+    );
     if (legacyModels.length === 0) {
       return null;
     }
@@ -533,7 +543,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       legacyModels,
       isExpanded: expandedLegacyInstances.has(selectedInstanceId),
     };
-  }, [expandedLegacyInstances, filteredModels, isSearching, selectedInstanceId]);
+  }, [expandedLegacyInstances, favoritesSet, filteredModels, isSearching, selectedInstanceId]);
 
   const visibleModels = useMemo(() => {
     if (!legacySection) {
