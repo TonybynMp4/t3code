@@ -344,7 +344,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               body: "Body",
             },
           }),
-          argsMustContain: `--model ${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded] --effort max --settings {"disableAllHooks":true,"fastMode":true}`,
+          argsMustContain: `--model ${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded] --effort max --settings {"disableAllHooks":true,"fastMode":true,"env":{"CLAUDE_CODE_DISABLE_1M_CONTEXT":"0"}}`,
           claudeConfig: { customModels: [SYNTHETIC_CLAUDE_COLLIDING_ALIAS] },
         },
         (textGeneration) =>
@@ -371,6 +371,38 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             expect(generated.title).toBe("Improve orchestration flow");
           }),
       ),
+  );
+
+  it.effect("opts out of the 1M context window for 200k selections", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            subject: "Add important change",
+            body: "",
+          },
+        }),
+        argsMustContain: `--model ${SYNTHETIC_CLAUDE_CAPABLE_MODEL} --effort high --settings {"disableAllHooks":true,"env":{"CLAUDE_CODE_DISABLE_1M_CONTEXT":"1"}}`,
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/claude-effect",
+            stagedSummary: "M README.md",
+            stagedPatch: "diff --git a/README.md b/README.md",
+            modelSelection: {
+              ...createModelSelection(
+                ProviderInstanceId.make("claudeAgent"),
+                SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+                [{ id: "contextWindow", value: "standard" }],
+              ),
+            },
+          });
+
+          expect(generated.subject).toBe("Add important change");
+        }),
+    ),
   );
 
   it.effect(
