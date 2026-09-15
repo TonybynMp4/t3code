@@ -283,6 +283,8 @@ import {
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
 } from "./composerProviderState";
+import { ComposerUsageMeter } from "./ComposerUsageMeter";
+import { resolveComposerUsageMeter } from "./ComposerUsageMeter.logic";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
 import {
   providerSupportsManualCompaction,
@@ -1342,6 +1344,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
+  composerUsage: ReturnType<typeof resolveComposerUsageMeter>;
   activeContextWindow: ContextWindowSnapshot | null;
   reserveContextWindowMeter: boolean;
   activeThreadModelDisplayName: string | null;
@@ -1378,6 +1381,12 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
+      {/* The bars live inside the ring's hover when a ring is shown. While the
+          ring is merely reserved it is still about to appear, so the standalone
+          chip stays out to avoid popping in and vanishing a frame later. */}
+      {props.composerUsage && !props.activeContextWindow && !props.reserveContextWindowMeter ? (
+        <ComposerUsageMeter usage={props.composerUsage} />
+      ) : null}
       {props.activeContextWindow ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}
@@ -1385,6 +1394,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
+          providerUsage={props.composerUsage}
         />
       ) : props.reserveContextWindowMeter ? (
         <ContextWindowMeterPlaceholder />
@@ -2117,6 +2127,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : undefined;
   const resolvedCompactDisabledReason =
     compactDisabledReason ?? (noProviderAvailable ? "Compacting is unavailable right now" : null);
+  const composerUsage = useMemo(
+    () =>
+      resolveComposerUsageMeter({
+        enabled: settings.showProviderUsageInComposer,
+        hasStartedTurn: activeThread?.latestRun != null || phase === "running",
+        provider: selectedProviderEntry?.snapshot,
+      }),
+    [activeThread?.latestRun, phase, selectedProviderEntry, settings.showProviderUsageInComposer],
+  );
   // The driver kind follows the instance that will actually run the turn,
   // which can differ from the persisted selection when that selection is
   // disabled.
@@ -7433,6 +7452,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
+                    composerUsage={composerUsage}
                     activeContextWindow={
                       settings.contextWindowMeterEnabled ? activeContextWindow : null
                     }
