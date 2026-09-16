@@ -1,5 +1,5 @@
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index cb47e40b8..b5a4060d5 100644
+index cb47e40b8..17e513520 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
 @@ -930,6 +930,8 @@ interface StagePackageJson {
@@ -22,7 +22,7 @@ index cb47e40b8..b5a4060d5 100644
        // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
        // in the .desktop entry (Exec already gets %U), so browsers can hand
        // t3code:// OAuth callbacks to the app.
-@@ -2749,9 +2755,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+@@ -2749,9 +2755,42 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
        desktop: {
          entry: {
            StartupWMClass: "t3code",
@@ -32,13 +32,40 @@ index cb47e40b8..b5a4060d5 100644
        },
      };
 +    buildConfig.deb = {
++      depends: [
++        "libgtk-3-0",
++        "libnotify4",
++        "libnss3",
++        "libxss1",
++        "libxtst6",
++        "xdg-utils",
++        "libatspi2.0-0",
++        "libuuid1",
++        "libsecret-1-0",
++        "libasound2",
++        "libgbm1",
++      ],
 +      recommends: ["libappindicator3-1", "policykit-1 | pkexec"],
 +      packageCategory: "devel",
++    };
++    buildConfig.rpm = {
++      depends: [
++        "gtk3",
++        "libnotify",
++        "nss",
++        "libXScrnSaver",
++        "(libXtst or libXtst6)",
++        "xdg-utils",
++        "at-spi2-core",
++        "(libuuid or libuuid1)",
++        "(alsa-lib or libasound2)",
++        "(mesa-libgbm or libgbm1)",
++      ],
 +    };
    }
  
    if (platform === "win") {
-@@ -3651,7 +3663,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+@@ -3651,7 +3690,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
      private: true,
      packageManager: rootPackageJson.packageManager,
      description: "T3 Code desktop build",

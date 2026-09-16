@@ -23,6 +23,11 @@ there. `FpmTarget` reads `license` straight off that staged metadata for the rpm
   `LinuxTargetHelper.writeDesktopEntry` merges `desktop.entry` first and then
   overwrites `Comment` from `description`, so an entry value would be silently
   dropped.
+- `deb.depends` and `rpm.depends`: electron-builder's defaults plus the ALSA
+  and GBM libraries, which Electron links against but the defaults omit, so a
+  minimal install could not start the app. `depends` replaces the defaults, so
+  they are copied; the install job in `mirror-linux-build.yml` catches it with
+  `ldd` if the list falls behind again.
 - `deb.recommends` and `deb.packageCategory`. `recommends` includes
   `policykit-1 | pkexec` because electron-updater installs a downloaded `.deb`
   through `pkexec`. It also repeats electron-builder's own default
