@@ -7,19 +7,19 @@ Upstream `pingdotgg/t3code` ships Linux only as an **AppImage** (x64 and arm64),
 - `.deb` and `.rpm`
 - x64 and arm64
 
-The AppImage is left to upstream; use their releases for it. Nothing else differs, apart from a three-line patch that lets `.deb` and `.rpm` installs use the in-app updater (see below). Everything else is upstream's source at an upstream tag.
+The AppImage is left to upstream; use their releases for it. The source is upstream's at an upstream tag, plus the small patches in `mirror-patches/` that make `.deb` and `.rpm` installs updatable and properly described (see below).
 
 ## What these builds are not
 
 They are not official. Nobody at T3 Tools signs off on them, and bugs you hit here should be reproduced against an official build before being reported upstream.
 
-Two behavioural differences worth knowing before you install:
+Two things worth knowing before you install:
 
 **Auto-update works, and it updates from this fork.** The in-app "Update available" flow works on both formats. `.deb` and `.rpm` prompt once for your password through `pkexec`, because applying the update means running `dpkg -i` or `rpm -U` as root - the same trade Windows makes with its UAC prompt. No apt or dnf repository to add, and no waiting for a scheduled `apt upgrade`.
 
-These builds update from **this fork's** releases, not upstream's, since that is where the arm64 and distro packages live. Moving to an official build later means downloading it from upstream once.
+These builds update from **this fork's** releases, not upstream's, since that is where the distro packages live. Moving to an official build later means downloading it from upstream once.
 
-**No cloud sign-in or T3 Connect.** Those need `T3CODE_CLERK_PUBLISHABLE_KEY` and `T3CODE_RELAY_URL`, which upstream injects from its own production environment. This fork does not have them, so `apps/server/vite.config.ts` bakes in empty strings and the features stay off. Local and LAN use is unaffected. Setting these would point users at the maintainers' relay infrastructure, so don't, without asking them first.
+**Cloud sign-in and T3 Connect work, against upstream's service.** The build bakes in the same public Clerk and relay config upstream's own release builds carry (`T3CODE_CLERK_*`, `T3CODE_RELAY_URL` in `mirror-linux-build.yml`), so these builds use the maintainers' relay infrastructure exactly like an official install. If upstream rotates any of those values, update them there.
 
 ## How it works
 

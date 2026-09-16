@@ -154,6 +154,12 @@ jobs:
       # keeps that intentional rather than incidental, and guarantees a build
       # run from a differently-named repo never points users at upstream.
       T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+      # Upstream's public T3 Connect config, as baked into its own release
+      # builds. Without it cloud sign-in and T3 Connect are compiled out.
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
+      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: hzxSgY2cH10sDU2r
+      T3CODE_RELAY_URL: https://relay.t3.codes
     steps:
       - name: Checkout upstream tag
         uses: actions/checkout@v6
@@ -432,7 +438,6 @@ jobs:
             echo "- Formats: \`.deb\` and \`.rpm\`, x64 and arm64"
             echo "- **Auto-update works**, from this fork's releases. Installs prompt once for your password (via \`pkexec\`) because the update is applied with \`dpkg\`/\`rpm\`, the same way Windows prompts through UAC. A desktop without \`pkexec\` cannot auto-update; reinstall the newer package by hand."
             echo "- For the AppImage, use the official [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases) - this fork does not rebuild it."
-            echo "- Cloud sign-in and T3 Connect are disabled in these builds. See MIRROR.md."
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
           } > release-notes.md
