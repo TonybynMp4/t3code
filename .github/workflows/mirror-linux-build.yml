@@ -1,14 +1,14 @@
 name: Mirror Linux build
 
 # Builds .deb and .rpm for x64 and arm64 from an upstream tag and publishes
-# them as a release on this fork. Upstream's own release workflow ships a Linux
-# x64 AppImage only, so this fills in the distro packages upstream never builds
+# them as a release on this fork. Upstream's own release workflow ships Linux
+# only as an AppImage, so this fills in the distro packages upstream never builds
 # without touching any upstream file. The AppImage is left to upstream; the
 # auto-update patch makes these .deb/.rpm installs updatable in place from this
 # fork's releases.
 #
-# Every step here mirrors the "Linux x64" matrix entry of upstream's
-# .github/workflows/release.yml. When that entry gains a dependency, this
+# Every step here mirrors the Linux matrix entries of upstream's
+# .github/workflows/release.yml. When those gain a dependency, this
 # workflow needs the same one. See MIRROR.md.
 
 on:
@@ -427,7 +427,7 @@ jobs:
             fi
             echo "---"
             echo
-            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG), because upstream CI ships a Linux x64 AppImage only. This tag is $channel_note."
+            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG), because upstream CI ships Linux only as an AppImage. This tag is $channel_note."
             echo
             echo "- Formats: \`.deb\` and \`.rpm\`, x64 and arm64"
             echo "- **Auto-update works**, from this fork's releases. Installs prompt once for your password (via \`pkexec\`) because the update is applied with \`dpkg\`/\`rpm\`, the same way Windows prompts through UAC. A desktop without \`pkexec\` cannot auto-update; reinstall the newer package by hand."

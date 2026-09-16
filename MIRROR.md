@@ -2,7 +2,7 @@
 
 This fork exists to build T3 Code Linux packages that upstream CI does not produce.
 
-Upstream `pingdotgg/t3code` ships a Linux **x64 AppImage** and nothing else for Linux. This fork adds the distro packages upstream never builds:
+Upstream `pingdotgg/t3code` ships Linux only as an **AppImage** (x64 and arm64), plus the AUR packages that repackage it. This fork adds the distro packages upstream never builds:
 
 - `.deb` and `.rpm`
 - x64 and arm64
@@ -35,7 +35,7 @@ You can also build a specific tag by hand: Actions → Mirror Linux build → Ru
 
 ## Keeping up with upstream
 
-The build steps are copied from the "Linux x64" matrix entry in upstream's `.github/workflows/release.yml`. When upstream adds a build dependency, this fork needs it too.
+The build steps are copied from the "Linux x64" and "Linux arm64" matrix entries in upstream's `.github/workflows/release.yml`. When upstream adds a build dependency, this fork needs it too.
 
 There is no drift-detection job, deliberately. Upstream's `preflightLinuxDesktopBuild` in `scripts/build-desktop-artifact.ts` already checks `LINUX_DESKTOP_BUILD_PREREQUISITES` and fails with the missing package names, so a new dependency shows up as a legible build error rather than something subtle. Read that error before assuming the workflow is at fault.
 
@@ -72,9 +72,6 @@ Assignment needs a `MIRROR_COPILOT_TOKEN` repository secret holding a PAT with i
 
 ## Upstreaming
 
-Two things here are worth offering upstream, and both are small:
-
-- The arm64 gap is about eight lines in their release matrix, on a free runner.
-- The auto-update patch is three lines and benefits them the moment they ship any distro package. It is also arguably a bug fix: the current check asks "is this an AppImage" when what it means is "can this install be updated", and electron-updater already answers that question more precisely.
+The auto-update patch is worth offering upstream. It is three lines and benefits them the moment they ship any distro package. It is also arguably a bug fix: the current check asks "is this an AppImage" when what it means is "can this install be updated", and electron-updater already answers that question more precisely.
 
 This fork is worth keeping for `.deb` and `.rpm` either way, since those carry real packaging support burden upstream has not signed up for.
