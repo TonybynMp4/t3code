@@ -14,7 +14,9 @@ there. `FpmTarget` reads `license` straight off that staged metadata for the rpm
   build-internal string `"T3 Code desktop build"`, and
   `LinuxTargetHelper.getDescription` feeds it to the deb `Description:` field,
   the rpm `%description`, and the `.desktop` `Comment` — so it surfaced verbatim
-  in `apt show` and as both title and subtitle in GNOME Software.
+  in `apt show` and as both title and subtitle in GNOME Software. It ends by
+  saying the build is unofficial, as does the AppStream description in 0003,
+  since both are what users see before installing.
 - `desktop.entry` additions (`GenericName`, `Keywords`). `Keywords` is a
   desktop-entry string list, so it keeps its trailing `;` — dropping it makes
   the whole value invalid. `Comment` is deliberately not set there:
