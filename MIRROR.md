@@ -62,6 +62,8 @@ The change lives in `mirror-patches/`, not as a commit on `main`. `main` therefo
 
 A `preflight` job checks the patches before the four build jobs start, so a stale patch costs two minutes instead of four long builds.
 
+After the builds, an `install` job installs each package into a clean `debian:13` or `fedora:43` container and fails the release if the package's dependencies leave any of the app's libraries unresolved, or if the updater marker (`resources/package-type`) is missing.
+
 ## When a patch goes stale
 
 Preflight files an issue labelled `mirror-patch` naming the patch and linking the failed run, then assigns GitHub Copilot to it. Copilot opens a pull request against `main` with the patch file rewritten against the new upstream code.

@@ -332,9 +332,65 @@ jobs:
           path: release-publish/**
           if-no-files-found: error
 
+  # Installs each package into a clean distro image, so a missing dependency,
+  # a package of the wrong format, or a build without the updater marker fails
+  # here instead of on a user's machine.
+  install:
+    name: Install ${{ matrix.target }} ${{ matrix.arch }}
+    needs: [build]
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: deb, arch: x64, runner: ubuntu-26.04, image: "debian:13" }
+          - { target: deb, arch: arm64, runner: ubuntu-26.04-arm, image: "debian:13" }
+          - { target: rpm, arch: x64, runner: ubuntu-26.04, image: "fedora:43" }
+          - { target: rpm, arch: arm64, runner: ubuntu-26.04-arm, image: "fedora:43" }
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-${{ inputs.tag }}-${{ matrix.target }}-${{ matrix.arch }}
+          path: package
+
+      - name: Install and inspect
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          packages=(package/*."$TARGET")
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            echo "Expected one .$TARGET, found: ${packages[*]}" >&2
+            exit 1
+          fi
+          if [[ "$TARGET" == deb ]]; then
+            apt-get update
+            apt-get install -y "./${packages[0]}"
+            files=$(dpkg -L t3code)
+          else
+            dnf install -y "./${packages[0]}"
+            files=$(rpm -ql t3code)
+          fi
+          binary=$(grep '^/opt/.*/t3code$' <<<"$files")
+          dir=$(dirname "$binary")
+          if [[ "$(cat "$dir/resources/package-type")" != "$TARGET" ]]; then
+            echo "resources/package-type is not $TARGET; in-app updates would be disabled." >&2
+            exit 1
+          fi
+          if ldd "$binary" | grep 'not found'; then
+            echo "Package dependencies do not cover the libraries above." >&2
+            exit 1
+          fi
+
   publish:
     name: Publish release
-    needs: [build]
+    needs: [build, install]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
