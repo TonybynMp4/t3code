@@ -334,10 +334,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Full history (without blobs) so the release notes can list this fork's
+      # own commits since the previous release.
       - name: Checkout mirror tooling
         uses: actions/checkout@v6
         with:
           sparse-checkout: .github/scripts
+          fetch-depth: 0
+          filter: blob:none
 
       - name: Download release assets
         uses: actions/download-artifact@v8
@@ -373,24 +377,56 @@ jobs:
             exit 1
           fi
 
-          case "$TAG" in
-            *-nightly.*)
-              channel_args=(--prerelease --latest=false)
-              channel_note="an upstream **nightly**"
-              ;;
-            *-preview.*)
-              channel_args=(--prerelease --latest=false)
-              channel_note="an upstream **preview**"
-              ;;
-            *-*)
-              channel_args=(--prerelease --latest=false)
-              channel_note="an upstream **prerelease**"
-              ;;
-            *)
+          channel_of() {
+            case "$1" in
+              *-nightly.*) echo nightly ;;
+              *-preview.*) echo preview ;;
+              *-*) echo prerelease ;;
+              *) echo stable ;;
+            esac
+          }
+          channel="$(channel_of "$TAG")"
+          case "$channel" in
+            stable)
               channel_args=(--latest)
               channel_note="an upstream **stable release**"
               ;;
+            *)
+              channel_args=(--prerelease --latest=false)
+              channel_note="an upstream **$channel**"
+              ;;
           esac
+
+          # This fork's own changes since the previous release on the same
+          # channel, so each change is announced once per channel. Upstream
+          # arrives only through merge commits, so first-parent non-merge
+          # commits are exactly this fork's. Each release records the main
+          # commit it was published from; releases older than that marker fall
+          # back to their publish time. With no previous release there is no
+          # meaningful range, so the section is left out.
+          mirror_sha="$(git rev-parse HEAD)"
+          previous_tag=""
+          previous_published=""
+          while IFS=$'\t' read -r tag published; do
+            if [ "$tag" != "$TAG" ] && [ "$(channel_of "$tag")" = "$channel" ]; then
+              previous_tag="$tag"
+              previous_published="$published"
+              break
+            fi
+          done < <(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+            --json tagName,publishedAt --jq 'sort_by(.publishedAt) | reverse | .[] | [.tagName, .publishedAt] | @tsv')
+
+          mirror_changes=""
+          if [ -n "$previous_tag" ]; then
+            previous_sha="$(gh release view "$previous_tag" --repo "$GITHUB_REPOSITORY" --json body --jq '.body' \
+              | grep -oE 'mirror-main: [0-9a-f]{40}' | head -1 | cut -d' ' -f2 || true)"
+            if [ -n "$previous_sha" ] && git cat-file -e "$previous_sha^{commit}" 2>/dev/null; then
+              range=("$previous_sha..HEAD")
+            else
+              range=(--since="$previous_published" HEAD)
+            fi
+            mirror_changes="$(git log --first-parent --no-merges --format="* %s ([%h](https://github.com/$GITHUB_REPOSITORY/commit/%H))" "${range[@]}")"
+          fi
 
           # Best-effort: upstream's own release body, folded in below so this
           # release's changelog is not a second page to check. Absent (for
@@ -402,22 +438,38 @@ jobs:
           # text: it collects the list items above the first "Full Changelog" /
           # "New Contributors" heading, keeps the last few, and reverses them
           # (apps/desktop/src/updates/releaseNotes.ts). So the upstream changelog
-          # goes first, and every mirror-specific note goes under the "## Full
-          # Changelog" heading, which stops that parser and keeps the popup
-          # showing only real upstream changes instead of this fork's boilerplate.
-          # The warning heading at the very top is a heading, which the parser
-          # skips, so it still leads the GitHub page without polluting the popup.
-          # Upstream's own "Full Changelog:" line is pulled out and re-emitted as
-          # that heading's link so the compare URL is not duplicated.
+          # goes first, then this fork's own changes, inserted before upstream's
+          # "## New Contributors" heading so the parser still reaches them and
+          # the popup lists them first. Boilerplate goes under the "## Full
+          # Changelog" heading, which stops that parser and keeps it out of the
+          # popup. The warning heading at the very top is a heading, which the
+          # parser skips, so it still leads the GitHub page without polluting
+          # the popup. Upstream's own "Full Changelog:" line is pulled out and
+          # re-emitted as that heading's link so the compare URL is not
+          # duplicated.
           compare_url="$(grep -oiE 'https://github.com/[^ )]+/compare/[^ )]+' upstream-notes.md | head -1 || true)"
           upstream_body="$(grep -viE '^[*_ ]*full changelog[*_ ]*:' upstream-notes.md || true)"
+
+          mirror_section=""
+          if [ -n "$mirror_changes" ]; then
+            mirror_section="$(printf '## Linux build changes\n\n%s\n' "$mirror_changes")"
+          fi
 
           {
             echo "## ⚠️ Unofficial Linux build (\`.deb\` / \`.rpm\`) — not official T3 Code"
             echo
             if grep -q '[^[:space:]]' <<<"$upstream_body"; then
-              printf '%s\n' "$upstream_body"
+              MIRROR_SECTION="$mirror_section" awk '
+                !done && tolower($0) ~ /^#+[[:space:]]*new contributors/ {
+                  if (ENVIRON["MIRROR_SECTION"] != "") print ENVIRON["MIRROR_SECTION"] "\n"
+                  done = 1
+                }
+                { print }
+                END { if (!done && ENVIRON["MIRROR_SECTION"] != "") print "\n" ENVIRON["MIRROR_SECTION"] }
+              ' <<<"$upstream_body"
               echo
+            elif [ -n "$mirror_section" ]; then
+              printf '%s\n\n' "$mirror_section"
             fi
             echo "## Full Changelog"
             echo
@@ -435,6 +487,8 @@ jobs:
             echo "- Cloud sign-in and T3 Connect are disabled in these builds. See MIRROR.md."
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
+            echo
+            echo "<!-- mirror-main: $mirror_sha -->"
           } > release-notes.md
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
