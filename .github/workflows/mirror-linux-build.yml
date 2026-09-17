@@ -36,7 +36,7 @@ jobs:
   # The fork's patches (see mirror-patches/README.md) are applied to upstream's
   # source at build time. Checking them here first means a patch that has
   # gone stale costs one two-minute job instead of four long ones, and gives
-  # a single place to hand the problem to Copilot.
+  # a single place to file an issue about it.
   preflight:
     name: Check patches apply
     runs-on: ubuntu-26.04
@@ -94,15 +94,11 @@ jobs:
             .github/scripts/report-stale-patch.sh
           .github/scripts/apply-mirror-patches.sh --check
 
-      - name: Hand the stale patch to Copilot
+      - name: File an issue about the stale patch
         if: failure() && steps.patches.outcome == 'failure'
         shell: bash
         env:
-          # GITHUB_TOKEN cannot assign the Copilot agent, so the assignment
-          # step needs a PAT. The issue itself is filed with either token, so
-          # the notification still arrives when the PAT is absent or expired.
-          GH_TOKEN: ${{ secrets.MIRROR_COPILOT_TOKEN || github.token }}
-          COPILOT_TOKEN: ${{ secrets.MIRROR_COPILOT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/report-stale-patch.sh

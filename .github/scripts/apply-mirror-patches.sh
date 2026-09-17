@@ -72,7 +72,7 @@ for prefix in "${prefixes[@]}"; do
 
   # None of the variants apply. Re-run the first one verbosely so the
   # failure (and any conflict markers left by --3way) end up in the log for
-  # whoever rewrites the patch, human or Copilot.
+  # whoever rewrites the patch.
   if [[ -z "$chosen" ]]; then
     variant="${variants[0]}"
     echo "Applying $variant"
