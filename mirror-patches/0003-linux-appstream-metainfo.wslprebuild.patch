@@ -23,7 +23,7 @@ index 44d5f0ab1..7dc738f85 100644
 +  <summary>The open-source control plane for coding agents</summary>
 +  <description>
 +    <p>
-+      Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscriptions.
++      Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscriptions. This is an unofficial community build of T3 Code.
 +    </p>
 +  </description>
 +  <developer id="io.github.tonybynmp4">

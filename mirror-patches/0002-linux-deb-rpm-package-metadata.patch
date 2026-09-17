@@ -1,8 +1,8 @@
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 44d5f0ab1..ae8818c84 100644
+index cb47e40b8..17e513520 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
-@@ -944,6 +944,8 @@ interface StagePackageJson {
+@@ -930,6 +930,8 @@ interface StagePackageJson {
    readonly packageManager: string;
    readonly description: string;
    readonly author: string;
@@ -11,18 +11,18 @@ index 44d5f0ab1..ae8818c84 100644
    readonly main: string;
    readonly build: Record<string, unknown>;
    readonly dependencies: Record<string, unknown>;
-@@ -2761,6 +2763,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+@@ -2737,6 +2739,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
        executableName: "t3code",
        icon: "icons",
        category: "Development",
 +      maintainer: "T3 Tools <97451137+TonybynMp4@users.noreply.github.com>",
 +      synopsis: "The open-source control plane for coding agents",
 +      description:
-+        "Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscriptions.",
++        "Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscriptions. Unofficial community build of T3 Code.",
        // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
        // in the .desktop entry (Exec already gets %U), so browsers can hand
        // t3code:// OAuth callbacks to the app.
-@@ -2773,9 +2779,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+@@ -2749,9 +2755,42 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
        desktop: {
          entry: {
            StartupWMClass: "t3code",
@@ -32,13 +32,40 @@ index 44d5f0ab1..ae8818c84 100644
        },
      };
 +    buildConfig.deb = {
++      depends: [
++        "libgtk-3-0",
++        "libnotify4",
++        "libnss3",
++        "libxss1",
++        "libxtst6",
++        "xdg-utils",
++        "libatspi2.0-0",
++        "libuuid1",
++        "libsecret-1-0",
++        "libasound2",
++        "libgbm1",
++      ],
 +      recommends: ["libappindicator3-1", "policykit-1 | pkexec"],
 +      packageCategory: "devel",
++    };
++    buildConfig.rpm = {
++      depends: [
++        "gtk3",
++        "libnotify",
++        "nss",
++        "libXScrnSaver",
++        "(libXtst or libXtst6)",
++        "xdg-utils",
++        "at-spi2-core",
++        "(libuuid or libuuid1)",
++        "(alsa-lib or libasound2)",
++        "(mesa-libgbm or libgbm1)",
++      ],
 +    };
    }
  
    if (platform === "win") {
-@@ -3774,7 +3786,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+@@ -3651,7 +3690,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
      private: true,
      packageManager: rootPackageJson.packageManager,
      description: "T3 Code desktop build",

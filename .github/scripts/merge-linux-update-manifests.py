@@ -23,6 +23,7 @@ import yaml
 # Order matters: the first present target supplies the legacy top-level
 # path/sha512 that pre-6.x clients fall back to when `files` is absent.
 TARGET_PRIORITY = ("deb", "rpm")
+ARCH_FEED_SUFFIXES = ("-linux.yml", "-linux-arm64.yml")
 
 
 def main(argv: list[str]) -> int:
@@ -49,6 +50,18 @@ def main(argv: list[str]) -> int:
     if not groups:
         print(f"No manifests found in {manifest_dir}", file=sys.stderr)
         return 1
+
+    # A half-populated feed is worse than none: clients trust it and the
+    # missing format silently never sees an update.
+    for suffix in ARCH_FEED_SUFFIXES:
+        if not any(feed.endswith(suffix) for feed in groups):
+            print(f"No *{suffix} feed; an architecture failed to build", file=sys.stderr)
+            return 1
+    for feed, by_target in sorted(groups.items()):
+        absent = [t for t in TARGET_PRIORITY if t not in by_target]
+        if absent:
+            print(f"{feed}: missing {', '.join(absent)} manifest", file=sys.stderr)
+            return 1
 
     for feed, by_target in sorted(groups.items()):
         ordered = [t for t in TARGET_PRIORITY if t in by_target]

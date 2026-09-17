@@ -14,13 +14,20 @@ there. `FpmTarget` reads `license` straight off that staged metadata for the rpm
   build-internal string `"T3 Code desktop build"`, and
   `LinuxTargetHelper.getDescription` feeds it to the deb `Description:` field,
   the rpm `%description`, and the `.desktop` `Comment` — so it surfaced verbatim
-  in `apt show` and as both title and subtitle in GNOME Software.
+  in `apt show` and as both title and subtitle in GNOME Software. It ends by
+  saying the build is unofficial, as does the AppStream description in 0003,
+  since both are what users see before installing.
 - `desktop.entry` additions (`GenericName`, `Keywords`). `Keywords` is a
   desktop-entry string list, so it keeps its trailing `;` — dropping it makes
   the whole value invalid. `Comment` is deliberately not set there:
   `LinuxTargetHelper.writeDesktopEntry` merges `desktop.entry` first and then
   overwrites `Comment` from `description`, so an entry value would be silently
   dropped.
+- `deb.depends` and `rpm.depends`: electron-builder's defaults plus the ALSA
+  and GBM libraries, which Electron links against but the defaults omit, so a
+  minimal install could not start the app. `depends` replaces the defaults, so
+  they are copied; the install job in `mirror-linux-build.yml` catches it with
+  `ldd` if the list falls behind again.
 - `deb.recommends` and `deb.packageCategory`. `recommends` includes
   `policykit-1 | pkexec` because electron-updater installs a downloaded `.deb`
   through `pkexec`. It also repeats electron-builder's own default
