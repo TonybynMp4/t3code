@@ -64,16 +64,18 @@ jobs:
       - name: Checkout upstream tag
         uses: actions/checkout@v6
         with:
+          repository: pingdotgg/t3code
           ref: ${{ matrix.tag }}
 
       - name: Apply mirror patches
         shell: bash
         env:
+          MIRROR_REPO: ${{ github.server_url }}/${{ github.repository }}
           MIRROR_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
 
-          git fetch --no-tags --depth=1 origin "$MIRROR_REF"
+          git fetch --no-tags --depth=1 "$MIRROR_REPO" "$MIRROR_REF"
           git checkout FETCH_HEAD -- \
             mirror-patches \
             .github/scripts/apply-mirror-patches.sh

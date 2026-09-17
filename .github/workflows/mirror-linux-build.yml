@@ -1,14 +1,14 @@
 name: Mirror Linux build
 
 # Builds .deb and .rpm for x64 and arm64 from an upstream tag and publishes
-# them as a release on this fork. Upstream's own release workflow ships a Linux
-# x64 AppImage only, so this fills in the distro packages upstream never builds
+# them as a release on this fork. Upstream's own release workflow ships Linux
+# only as an AppImage, so this fills in the distro packages upstream never builds
 # without touching any upstream file. The AppImage is left to upstream; the
 # auto-update patch makes these .deb/.rpm installs updatable in place from this
 # fork's releases.
 #
-# Every step here mirrors the "Linux x64" matrix entry of upstream's
-# .github/workflows/release.yml. When that entry gains a dependency, this
+# Every step here mirrors the Linux matrix entries of upstream's
+# .github/workflows/release.yml. When those gain a dependency, this
 # workflow needs the same one. See MIRROR.md.
 
 on:
@@ -154,6 +154,12 @@ jobs:
       # keeps that intentional rather than incidental, and guarantees a build
       # run from a differently-named repo never points users at upstream.
       T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+      # Upstream's public T3 Connect config, as baked into its own release
+      # builds. Without it cloud sign-in and T3 Connect are compiled out.
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
+      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: hzxSgY2cH10sDU2r
+      T3CODE_RELAY_URL: https://relay.t3.codes
     steps:
       - name: Checkout upstream tag
         uses: actions/checkout@v6
@@ -326,9 +332,65 @@ jobs:
           path: release-publish/**
           if-no-files-found: error
 
+  # Installs each package into a clean distro image, so a missing dependency,
+  # a package of the wrong format, or a build without the updater marker fails
+  # here instead of on a user's machine.
+  install:
+    name: Install ${{ matrix.target }} ${{ matrix.arch }}
+    needs: [build]
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: deb, arch: x64, runner: ubuntu-26.04, image: "debian:13" }
+          - { target: deb, arch: arm64, runner: ubuntu-26.04-arm, image: "debian:13" }
+          - { target: rpm, arch: x64, runner: ubuntu-26.04, image: "fedora:43" }
+          - { target: rpm, arch: arm64, runner: ubuntu-26.04-arm, image: "fedora:43" }
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-${{ inputs.tag }}-${{ matrix.target }}-${{ matrix.arch }}
+          path: package
+
+      - name: Install and inspect
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          packages=(package/*."$TARGET")
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            echo "Expected one .$TARGET, found: ${packages[*]}" >&2
+            exit 1
+          fi
+          if [[ "$TARGET" == deb ]]; then
+            apt-get update
+            apt-get install -y "./${packages[0]}"
+            files=$(dpkg -L t3code)
+          else
+            dnf install -y "./${packages[0]}"
+            files=$(rpm -ql t3code)
+          fi
+          binary=$(grep '^/opt/.*/t3code$' <<<"$files")
+          dir=$(dirname "$binary")
+          if [[ "$(cat "$dir/resources/package-type")" != "$TARGET" ]]; then
+            echo "resources/package-type is not $TARGET; in-app updates would be disabled." >&2
+            exit 1
+          fi
+          if ldd "$binary" | grep 'not found'; then
+            echo "Package dependencies do not cover the libraries above." >&2
+            exit 1
+          fi
+
   publish:
     name: Publish release
-    needs: [build]
+    needs: [build, install]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -479,12 +541,11 @@ jobs:
             fi
             echo "---"
             echo
-            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG), because upstream CI ships a Linux x64 AppImage only. This tag is $channel_note."
+            echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG), because upstream CI ships Linux only as an AppImage. This tag is $channel_note."
             echo
             echo "- Formats: \`.deb\` and \`.rpm\`, x64 and arm64"
             echo "- **Auto-update works**, from this fork's releases. Installs prompt once for your password (via \`pkexec\`) because the update is applied with \`dpkg\`/\`rpm\`, the same way Windows prompts through UAC. A desktop without \`pkexec\` cannot auto-update; reinstall the newer package by hand."
             echo "- For the AppImage, use the official [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases) - this fork does not rebuild it."
-            echo "- Cloud sign-in and T3 Connect are disabled in these builds. See MIRROR.md."
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
             echo

@@ -2,24 +2,24 @@
 
 This fork exists to build T3 Code Linux packages that upstream CI does not produce.
 
-Upstream `pingdotgg/t3code` ships a Linux **x64 AppImage** and nothing else for Linux. This fork adds the distro packages upstream never builds:
+Upstream `pingdotgg/t3code` ships Linux only as an **AppImage** (x64 and arm64), plus the AUR packages that repackage it. This fork adds the distro packages upstream never builds:
 
 - `.deb` and `.rpm`
 - x64 and arm64
 
-The AppImage is left to upstream; use their releases for it. Nothing else differs, apart from a three-line patch that lets `.deb` and `.rpm` installs use the in-app updater (see below). Everything else is upstream's source at an upstream tag.
+The AppImage is left to upstream; use their releases for it. The source is upstream's at an upstream tag, plus the small patches in `mirror-patches/` that make `.deb` and `.rpm` installs updatable and properly described (see below).
 
 ## What these builds are not
 
 They are not official. Nobody at T3 Tools signs off on them, and bugs you hit here should be reproduced against an official build before being reported upstream.
 
-Two behavioural differences worth knowing before you install:
+Two things worth knowing before you install:
 
 **Auto-update works, and it updates from this fork.** The in-app "Update available" flow works on both formats. `.deb` and `.rpm` prompt once for your password through `pkexec`, because applying the update means running `dpkg -i` or `rpm -U` as root - the same trade Windows makes with its UAC prompt. No apt or dnf repository to add, and no waiting for a scheduled `apt upgrade`.
 
-These builds update from **this fork's** releases, not upstream's, since that is where the arm64 and distro packages live. Moving to an official build later means downloading it from upstream once.
+These builds update from **this fork's** releases, not upstream's, since that is where the distro packages live. Moving to an official build later means downloading it from upstream once.
 
-**No cloud sign-in or T3 Connect.** Those need `T3CODE_CLERK_PUBLISHABLE_KEY` and `T3CODE_RELAY_URL`, which upstream injects from its own production environment. This fork does not have them, so `apps/server/vite.config.ts` bakes in empty strings and the features stay off. Local and LAN use is unaffected. Setting these would point users at the maintainers' relay infrastructure, so don't, without asking them first.
+**Cloud sign-in and T3 Connect work, against upstream's service.** The build bakes in the same public Clerk and relay config upstream's own release builds carry (`T3CODE_CLERK_*`, `T3CODE_RELAY_URL` in `mirror-linux-build.yml`), so these builds use the maintainers' relay infrastructure exactly like an official install. If upstream rotates any of those values, update them there.
 
 ## How it works
 
@@ -35,7 +35,7 @@ You can also build a specific tag by hand: Actions → Mirror Linux build → Ru
 
 ## Keeping up with upstream
 
-The build steps are copied from the "Linux x64" matrix entry in upstream's `.github/workflows/release.yml`. When upstream adds a build dependency, this fork needs it too.
+The build steps are copied from the "Linux x64" and "Linux arm64" matrix entries in upstream's `.github/workflows/release.yml`. When upstream adds a build dependency, this fork needs it too.
 
 There is no drift-detection job, deliberately. Upstream's `preflightLinuxDesktopBuild` in `scripts/build-desktop-artifact.ts` already checks `LINUX_DESKTOP_BUILD_PREREQUISITES` and fails with the missing package names, so a new dependency shows up as a legible build error rather than something subtle. Read that error before assuming the workflow is at fault.
 
@@ -62,6 +62,8 @@ The change lives in `mirror-patches/`, not as a commit on `main`. `main` therefo
 
 A `preflight` job checks the patches before the four build jobs start, so a stale patch costs two minutes instead of four long builds.
 
+After the builds, an `install` job installs each package into a clean `debian:13` or `fedora:43` container and fails the release if the package's dependencies leave any of the app's libraries unresolved, or if the updater marker (`resources/package-type`) is missing.
+
 ## When a patch goes stale
 
 Preflight files an issue labelled `mirror-patch` naming the patch and linking the failed run, then assigns GitHub Copilot to it. Copilot opens a pull request against `main` with the patch file rewritten against the new upstream code.
@@ -72,9 +74,6 @@ Assignment needs a `MIRROR_COPILOT_TOKEN` repository secret holding a PAT with i
 
 ## Upstreaming
 
-Two things here are worth offering upstream, and both are small:
-
-- The arm64 gap is about eight lines in their release matrix, on a free runner.
-- The auto-update patch is three lines and benefits them the moment they ship any distro package. It is also arguably a bug fix: the current check asks "is this an AppImage" when what it means is "can this install be updated", and electron-updater already answers that question more precisely.
+The auto-update patch is worth offering upstream. It is three lines and benefits them the moment they ship any distro package. It is also arguably a bug fix: the current check asks "is this an AppImage" when what it means is "can this install be updated", and electron-updater already answers that question more precisely.
 
 This fork is worth keeping for `.deb` and `.rpm` either way, since those carry real packaging support burden upstream has not signed up for.
