@@ -1778,7 +1778,7 @@ function QueuedMessageTimelineRow({
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
         {text.length > 0 ? (
-          <div className="whitespace-pre-wrap break-words text-sm">{text}</div>
+          <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
         ) : null}
         {attachmentCount > 0 || contextCount > 0 ? (
           <div className={cn("text-secondary-label text-xs", text.length > 0 && "mt-1.5")}>
@@ -3508,12 +3508,13 @@ function UserMessagePullRequestContextChip(props: {
   copyMarkdown: string;
   toneClassName: string;
 }) {
-  const { openPullRequest } = use(TimelineRowCtx);
+  const { activeThreadEnvironmentId, openPullRequest } = use(TimelineRowCtx);
   const metadata = props.record.pullRequest;
   if (metadata === undefined) return null;
   return (
     <PullRequestChip
       metadata={metadata}
+      environmentId={activeThreadEnvironmentId}
       label={reviewCommentContextLabel(props.record)}
       kindLabel={pullRequestContextKindLabel(props.record)}
       className={cn(CHAT_INLINE_CHIP_CLASS_NAME, props.toneClassName)}
@@ -4067,7 +4068,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
-  renderContextReference: (reference: ChatMarkdownContextReference) => ReactNode;
+  renderContextReference?: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
