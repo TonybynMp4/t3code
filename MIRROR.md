@@ -33,6 +33,17 @@ Only the newest tag per channel is ever built. Upstream cuts several nightlies a
 
 You can also build a specific tag by hand: Actions → Mirror Linux build → Run workflow, with a tag like `v0.0.40`. The tag has to be mirrored here first, and the workflow says so if it isn't.
 
+## Release stats
+
+Each release body ends with a hidden, one-line `<!-- mirror-stats: {...} -->` comment: `tag`, `channel`, `publishedAt`, `upstreamPublishedAt` and `delaySeconds` (how long after upstream this build was published; `null` when upstream has no release for the tag). `version` is the format version, bumped only if a field changes meaning. A dashboard can read them all from the releases API:
+
+```bash
+gh api --paginate repos/TonybynMp4/t3code/releases \
+  --jq '.[] | .body | capture("<!-- mirror-stats: (?<s>\\{.*\\}) -->").s | fromjson'
+```
+
+Releases published before the marker existed have none and are skipped by that query.
+
 ## Keeping up with upstream
 
 The build steps are copied from the "Linux x64" and "Linux arm64" matrix entries in upstream's `.github/workflows/release.yml`. When upstream adds a build dependency, this fork needs it too.

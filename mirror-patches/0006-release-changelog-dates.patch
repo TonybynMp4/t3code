@@ -1,0 +1,101 @@
+diff --git a/apps/desktop/src/updates/releaseNotes.ts b/apps/desktop/src/updates/releaseNotes.ts
+index 3cab5f15e4..b07b917291 100644
+--- a/apps/desktop/src/updates/releaseNotes.ts
++++ b/apps/desktop/src/updates/releaseNotes.ts
+@@ -119,6 +119,16 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
+   return { items: items.toReversed(), totalItems };
+ }
+ 
++const RELEASED_AT_MARKER = /<!--\s*released-at:\s*([^\s>]+)\s*-->/;
++
++function extractReleaseNotePublishedAt(note: string | null | undefined): string | undefined {
++  const marker = note ? RELEASED_AT_MARKER.exec(note) : null;
++  if (!marker?.[1]) return undefined;
++  const parsed = Date.parse(marker[1]);
++  if (Number.isNaN(parsed)) return undefined;
++  return new Date(parsed).toISOString();
++}
++
+ interface NormalizedDesktopUpdateReleaseNotes {
+   readonly releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote>;
+   readonly omittedReleaseCount: number;
+@@ -149,11 +159,13 @@ export function normalizeDesktopUpdateReleaseNotes(
+   const normalizedNotes = rawNotes.flatMap((entry) => {
+     const { items, totalItems } = extractReleaseNoteItems(entry.note);
+     if (totalItems === 0) return [];
++    const publishedAt = extractReleaseNotePublishedAt(entry.note);
+     return [
+       {
+         version: entry.version,
+         items,
+         totalItems,
++        ...(publishedAt ? { publishedAt } : {}),
+       },
+     ];
+   });
+diff --git a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
+index 89204d1bd8..b748655f98 100644
+--- a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
++++ b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
+@@ -1,6 +1,7 @@
+ import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
+ import { ExternalLinkIcon } from "lucide-react";
+ 
++import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
+ import {
+   getDesktopUpdateReleaseHistoryUrl,
+   getDesktopUpdateReleaseUrl,
+@@ -19,6 +20,18 @@ function keyReleaseNoteItems(items: ReadonlyArray<string>) {
+   });
+ }
+ 
++function ReleaseDate({ publishedAt }: { readonly publishedAt: string | undefined }) {
++  if (!publishedAt) return null;
++  const date = parseTimestampDate(publishedAt);
++  if (!date) return null;
++  const day = date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
++  return (
++    <span className="shrink-0 text-xs leading-4 font-normal text-muted-foreground">
++      {`${day} · ${formatRelativeTimeLabel(publishedAt)}`}
++    </span>
++  );
++}
++
+ function ReleaseLink({
+   children,
+   releaseUrl,
+@@ -87,9 +100,12 @@ export function SidebarUpdateReleaseNotes({
+             <div key={releaseNote.version}>
+               {index > 0 && <Separator className="my-3 bg-border/60" />}
+               <section>
+-                <h3 className="text-foreground text-xs leading-4 font-semibold">
+-                  {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
+-                </h3>
++                <div className="flex items-baseline justify-between gap-3">
++                  <h3 className="text-foreground text-xs leading-4 font-semibold">
++                    {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
++                  </h3>
++                  <ReleaseDate publishedAt={releaseNote.publishedAt} />
++                </div>
+                 <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
+                   {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => (
+                     <li className="list-disc break-words" key={key}>
+diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
+index c67ecd27c0..0317e3f39e 100644
+--- a/packages/contracts/src/ipc.ts
++++ b/packages/contracts/src/ipc.ts
+@@ -295,12 +295,14 @@ export interface DesktopUpdateReleaseNote {
+   version: string;
+   items: ReadonlyArray<string>;
+   totalItems: number;
++  publishedAt?: string;
+ }
+ 
+ export const DesktopUpdateReleaseNoteSchema = Schema.Struct({
+   version: Schema.String,
+   items: Schema.Array(Schema.String),
+   totalItems: Schema.Number,
++  publishedAt: Schema.optional(Schema.String),
+ });
+ 
+ export const DesktopUpdateStateSchema = Schema.Struct({
