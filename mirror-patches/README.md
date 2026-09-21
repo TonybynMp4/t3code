@@ -40,6 +40,9 @@ targets, not only when it stops applying.
 | [`0005-updater-error-cause-logging`](0005-updater-error-cause-logging.md)       | Logs why an updater check, download or install failed.             |
 | [`0006-mirror-release-changelog`](0006-mirror-release-changelog.md)             | Separates fork changes and dates releases in the update changelog. |
 
+`dev/` holds patches that are never applied to builds, for previewing these
+in the dev app. See [`dev/README.md`](dev/README.md).
+
 When a patch goes stale the intent is what matters, not the exact diff — read
 its `.md` first, then reapply the same behaviour wherever upstream moved the
 code. `MIRROR.md` covers what the sync and build jobs do when one goes stale.

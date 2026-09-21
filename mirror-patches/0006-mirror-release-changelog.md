@@ -18,24 +18,27 @@ heading into a separate list, capped on its own, until the next heading. Matchin
 the visible heading rather than a new marker means releases published before
 this patch split correctly too.
 
-**Dating releases.** The GitHub feed carries no per-release timestamp for the
+**Dating releases.** The feed carries no per-release timestamp for the
 `fullChangelog` list, and `UpdateInfo.releaseDate` only covers the offered
-version. So the workflow stamps each body with a hidden
-`<!-- released-at: <ISO> -->` marker, read back before `stripMarkup` discards
-it. A missing or unparseable marker leaves `publishedAt` off, so older releases
-and upstream's own simply show no date.
+version. So the workflow writes a visible `Published <ISO>` line in the body's
+boilerplate, below the "Full Changelog" heading so it never becomes an item, and
+the patch reads the first ISO timestamp after `Published`. It cannot be an HTML
+comment: electron-updater reads notes from the `releases.atom` feed, whose
+rendered HTML has comments stripped. Releases without the line, including
+upstream's own, simply show no date.
 
 - `packages/contracts/src/ipc.ts` adds optional `mirrorItems`,
   `mirrorTotalItems` and `publishedAt` to `DesktopUpdateReleaseNote`. Optional
   so every existing fixture and test that builds one still typechecks without
   being patched too.
-- `apps/desktop/src/updates/releaseNotes.ts` does the splitting and the marker
+- `apps/desktop/src/updates/releaseNotes.ts` does the splitting and the date
   read. A release with only fork changes still gets a group.
 - `apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx` renders the
-  fork's items under a muted "Linux build" subheading after upstream's, counts
-  both lists in the "N more changes" link, and shows the date beside each group
-  heading. The absolute day is inline rather than on hover because the popover
-  is itself tooltip content, and the repo lint forbids native `title` tooltips.
+  fork's items first under a muted "Linux build" subheading, then upstream's
+  under "Upstream" (unlabelled when there are no fork items), counts both lists
+  in the "N more changes" link, and shows the date beside each group heading.
+  The absolute day is inline rather than on hover because the popover is
+  itself tooltip content, and the repo lint forbids native `title` tooltips.
 
 The date label is computed when the popover renders; there is no ticking timer.
 
@@ -44,6 +47,7 @@ would fail a release for no runtime benefit.
 
 If it stops applying, what matters is that each changelog group lists the
 `Linux build changes` items separately from upstream's, and shows when its
-release was published, read from the `released-at` marker in the note. If the
-workflow's heading text changes, the parser's `MIRROR_SECTION_HEADING` must
-change with it.
+release was published, read from the `Published <ISO>` line in the note. If the
+workflow's heading or `Published` line changes, the parser must change with it.
+`mirror-patches/dev/preview-update-changelog.sh` shows the result against the
+real releases in the dev app.

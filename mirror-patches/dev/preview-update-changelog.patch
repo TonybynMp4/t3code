@@ -1,0 +1,48 @@
+diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
+index c35b52e834..76c1f05be3 100644
+--- a/apps/desktop/src/updates/DesktopUpdates.ts
++++ b/apps/desktop/src/updates/DesktopUpdates.ts
+@@ -21,6 +21,8 @@ import * as Schema from "effect/Schema";
+ import * as Scope from "effect/Scope";
+ import * as Semaphore from "effect/Semaphore";
+ import * as Stream from "effect/Stream";
++import { app } from "electron";
++import { autoUpdater } from "electron-updater";
+ 
+ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+ import * as DesktopConfig from "../app/DesktopConfig.ts";
+@@ -389,7 +391,10 @@ export const make = Effect.gen(function* () {
+     });
+   });
+ 
+-  const shouldEnableAutoUpdates = resolveDisabledReason.pipe(Effect.map(Option.isNone));
++  const devUpdateFrom = environment.isDevelopment ? process.env.T3CODE_DEV_UPDATE_FROM : undefined;
++  const shouldEnableAutoUpdates = devUpdateFrom
++    ? Effect.succeed(true)
++    : resolveDisabledReason.pipe(Effect.map(Option.isNone));
+ 
+   const checkForUpdates = Effect.fn("desktop.updates.checkForUpdates")(function* (
+     reason: string,
+@@ -877,7 +882,21 @@ export const make = Effect.gen(function* () {
+         } as ElectronUpdater.ElectronUpdaterFeedUrl);
+       }
+ 
+-      const settings = yield* desktopSettings.get;
++      if (devUpdateFrom) {
++        app.getVersion = () => devUpdateFrom;
++        autoUpdater.forceDevUpdateConfig = true;
++        const [owner = "", repo = ""] = (
++          process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY ?? "TonybynMp4/t3code"
++        ).split("/");
++        yield* electronUpdater.setFeedURL({ provider: "github", owner, repo });
++      }
++
++      const settings = devUpdateFrom
++        ? {
++            ...(yield* desktopSettings.get),
++            updateChannel: resolveDefaultDesktopUpdateChannel(devUpdateFrom),
++          }
++        : yield* desktopSettings.get;
+       const enabled = yield* shouldEnableAutoUpdates;
+       yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
+       if (!enabled) {

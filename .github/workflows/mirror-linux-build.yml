@@ -500,9 +500,11 @@ jobs:
           fi
 
           # Stamped into the body so the in-app changelog can date each release
-          # without calling the GitHub API; the popup reads the marker below.
-          # gh publishes within seconds of this, so it doubles as the release
-          # time for the delay stat.
+          # without calling the GitHub API; the popup parses the visible
+          # "Published <ISO>" line below. It cannot be an HTML comment: the app
+          # reads notes from the releases.atom feed, whose rendered HTML drops
+          # comments. gh publishes within seconds of this, so it doubles as the
+          # release time for the delay stat.
           published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           format_duration() {
@@ -604,11 +606,12 @@ jobs:
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
             echo
             if [ -n "$mirror_delay" ]; then
-              echo "Published $mirror_delay after the upstream release ($upstream_published)."
-              echo
+              echo "Published $published_at, $mirror_delay after the upstream release ($upstream_published)."
+            else
+              echo "Published $published_at."
             fi
+            echo
             echo "<!-- mirror-main: $mirror_sha -->"
-            echo "<!-- released-at: $published_at -->"
             echo "<!-- mirror-stats: $mirror_stats -->"
           } > release-notes.md
 

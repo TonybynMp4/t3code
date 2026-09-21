@@ -1,5 +1,5 @@
 diff --git a/apps/desktop/src/updates/releaseNotes.ts b/apps/desktop/src/updates/releaseNotes.ts
-index 3cab5f15e4..851f5abd31 100644
+index 3cab5f15e4..bf5b3a5f08 100644
 --- a/apps/desktop/src/updates/releaseNotes.ts
 +++ b/apps/desktop/src/updates/releaseNotes.ts
 @@ -92,17 +92,36 @@ function isIgnoredReleaseNoteLine(line: string): boolean {
@@ -43,7 +43,7 @@ index 3cab5f15e4..851f5abd31 100644
      const item = rawLine
        .trim()
        .replace(/^[-*]\s+/, "")
-@@ -110,13 +129,24 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
+@@ -110,13 +129,22 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
        .replace(/\s+/g, " ");
      const normalized = normalizeReleaseNoteLine(item);
      if (normalized === "new contributors" || normalized === "full changelog") break;
@@ -62,18 +62,16 @@ index 3cab5f15e4..851f5abd31 100644
 +  return { upstream: upstream.finish(), mirror: mirror.finish() };
 +}
 +
-+const RELEASED_AT_MARKER = /<!--\s*released-at:\s*([^\s>]+)\s*-->/;
++const RELEASED_AT_LINE = /Published (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/;
 +
 +function extractReleaseNotePublishedAt(note: string | null | undefined): string | undefined {
-+  const marker = note ? RELEASED_AT_MARKER.exec(note) : null;
-+  if (!marker?.[1]) return undefined;
-+  const parsed = Date.parse(marker[1]);
-+  if (Number.isNaN(parsed)) return undefined;
-+  return new Date(parsed).toISOString();
++  const marker = note ? RELEASED_AT_LINE.exec(note) : null;
++  if (!marker?.[1] || Number.isNaN(Date.parse(marker[1]))) return undefined;
++  return marker[1];
  }
  
  interface NormalizedDesktopUpdateReleaseNotes {
-@@ -147,13 +177,18 @@ export function normalizeDesktopUpdateReleaseNotes(
+@@ -147,13 +175,18 @@ export function normalizeDesktopUpdateReleaseNotes(
    ).filter((entry) => resolveDefaultDesktopUpdateChannel(entry.version) === channel);
  
    const normalizedNotes = rawNotes.flatMap((entry) => {
@@ -97,7 +95,7 @@ index 3cab5f15e4..851f5abd31 100644
      ];
    });
 diff --git a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
-index 89204d1bd8..c91e22e8c8 100644
+index 89204d1bd8..3e6d16a1d6 100644
 --- a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
 +++ b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
 @@ -1,6 +1,7 @@
@@ -151,7 +149,7 @@ index 89204d1bd8..c91e22e8c8 100644
            const linkLabel =
              omittedItemCount === 0
                ? "View release on GitHub"
-@@ -87,16 +115,23 @@ export function SidebarUpdateReleaseNotes({
+@@ -87,16 +115,28 @@ export function SidebarUpdateReleaseNotes({
              <div key={releaseNote.version}>
                {index > 0 && <Separator className="my-3 bg-border/60" />}
                <section>
@@ -171,16 +169,21 @@ index 89204d1bd8..c91e22e8c8 100644
 +                  </h3>
 +                  <ReleaseDate publishedAt={releaseNote.publishedAt} />
 +                </div>
-+                {releaseNote.items.length > 0 ? (
-+                  <ReleaseNoteItems items={releaseNote.items} />
-+                ) : null}
 +                {mirrorItems.length > 0 ? (
 +                  <>
-+                    <h4 className="mt-3 text-xs leading-4 font-medium text-muted-foreground">
++                    <h4 className="mt-2 text-xs leading-4 font-medium text-muted-foreground">
 +                      Linux build
 +                    </h4>
 +                    <ReleaseNoteItems items={mirrorItems} />
++                    {releaseNote.items.length > 0 ? (
++                      <h4 className="mt-3 text-xs leading-4 font-medium text-muted-foreground">
++                        Upstream
++                      </h4>
++                    ) : null}
 +                  </>
++                ) : null}
++                {releaseNote.items.length > 0 ? (
++                  <ReleaseNoteItems items={releaseNote.items} />
 +                ) : null}
                  {releaseUrl ? (
                    <ReleaseLink releaseUrl={releaseUrl} shell={shell}>
