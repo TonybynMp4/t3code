@@ -489,8 +489,64 @@ jobs:
           # Best-effort: upstream's own release body, folded in below so this
           # release's changelog is not a second page to check. Absent (for
           # example a tag upstream hasn't released yet) just drops the section.
-          gh api "repos/pingdotgg/t3code/releases/tags/$TAG" --jq '.body // ""' \
-            > upstream-notes.md 2>/dev/null || : > upstream-notes.md
+          # The same response carries upstream's publish time, which is the only
+          # way to know how far behind them this build landed.
+          if gh api "repos/pingdotgg/t3code/releases/tags/$TAG" > upstream-release.json 2>/dev/null; then
+            jq -r '.body // ""' upstream-release.json > upstream-notes.md
+            upstream_published="$(jq -r '.published_at // .created_at // ""' upstream-release.json)"
+          else
+            : > upstream-notes.md
+            upstream_published=""
+          fi
+
+          # Stamped into the body so the in-app changelog can date each release
+          # without calling the GitHub API; the popup reads the marker below.
+          # gh publishes within seconds of this, so it doubles as the release
+          # time for the delay stat.
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          format_duration() {
+            local total="$1" days hours minutes
+            days=$((total / 86400))
+            hours=$((total % 86400 / 3600))
+            minutes=$((total % 3600 / 60))
+            if [ "$days" -gt 0 ]; then
+              printf '%dd %dh %dm' "$days" "$hours" "$minutes"
+            elif [ "$hours" -gt 0 ]; then
+              printf '%dh %dm' "$hours" "$minutes"
+            else
+              printf '%dm' "$minutes"
+            fi
+          }
+
+          mirror_delay=""
+          delay_seconds=""
+          if [ -n "$upstream_published" ]; then
+            delay_seconds=$(( $(date -u -d "$published_at" +%s) - $(date -u -d "$upstream_published" +%s) ))
+            if [ "$delay_seconds" -ge 0 ]; then
+              mirror_delay="$(format_duration "$delay_seconds")"
+            else
+              delay_seconds=""
+            fi
+          fi
+
+          # Machine-readable copy of the same numbers, for dashboards that list
+          # this fork's releases through the GitHub API and parse the body.
+          # One JSON object on one line; nulls when upstream has no release.
+          mirror_stats="$(jq -nc \
+            --arg tag "$TAG" \
+            --arg channel "$channel" \
+            --arg publishedAt "$published_at" \
+            --arg upstreamPublishedAt "$upstream_published" \
+            --arg delaySeconds "$delay_seconds" \
+            '{
+              version: 1,
+              tag: $tag,
+              channel: $channel,
+              publishedAt: $publishedAt,
+              upstreamPublishedAt: (if $upstreamPublishedAt == "" then null else $upstreamPublishedAt end),
+              delaySeconds: (if $delaySeconds == "" then null else ($delaySeconds | tonumber) end)
+            }')"
 
           # Body layout is tuned for the desktop update popup, which parses this
           # text: it collects the list items above the first "Full Changelog" /
@@ -545,7 +601,13 @@ jobs:
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."
             echo
+            if [ -n "$mirror_delay" ]; then
+              echo "Published $mirror_delay after the upstream release ($upstream_published)."
+              echo
+            fi
             echo "<!-- mirror-main: $mirror_sha -->"
+            echo "<!-- released-at: $published_at -->"
+            echo "<!-- mirror-stats: $mirror_stats -->"
           } > release-notes.md
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -556,4 +618,17 @@ jobs:
               --title "$TAG" \
               --notes-file release-notes.md \
               "${channel_args[@]}"
+
+            # Maintainer-facing: how far this fork trails upstream, run over
+            # run. Only on first publish; a re-run that re-uploads assets
+            # leaves the release's original timestamps in place.
+            {
+              echo "### Mirror release $TAG"
+              echo
+              echo "| Stat | Value |"
+              echo "| --- | --- |"
+              echo "| Upstream published | ${upstream_published:-unknown} |"
+              echo "| Mirror published | $published_at |"
+              echo "| Delay behind upstream | ${mirror_delay:-unknown} |"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi

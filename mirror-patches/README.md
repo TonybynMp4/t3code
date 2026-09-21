@@ -38,6 +38,7 @@ targets, not only when it stops applying.
 | [`0003-linux-appstream-metainfo`](0003-linux-appstream-metainfo.md)             | Ships an AppStream component so software centres describe the app. |
 | [`0004-linux-desktop-entry-identity`](0004-linux-desktop-entry-identity.md)     | Makes a `.deb`/`.rpm` install group under its own launcher icon.   |
 | [`0005-updater-error-cause-logging`](0005-updater-error-cause-logging.md)       | Logs why an updater check, download or install failed.             |
+| [`0006-release-changelog-dates`](0006-release-changelog-dates.md)               | Shows when each release was published in the update changelog.     |
 
 When a patch goes stale the intent is what matters, not the exact diff — read
 its `.md` first, then reapply the same behaviour wherever upstream moved the
