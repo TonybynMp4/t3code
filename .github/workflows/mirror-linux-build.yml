@@ -553,8 +553,10 @@ jobs:
           # "New Contributors" heading, keeps the last few, and reverses them
           # (apps/desktop/src/updates/releaseNotes.ts). So the upstream changelog
           # goes first, then this fork's own changes, inserted before upstream's
-          # "## New Contributors" heading so the parser still reaches them and
-          # the popup lists them first. Boilerplate goes under the "## Full
+          # "## New Contributors" heading so the parser still reaches them. The
+          # mirror-release-changelog patch lists items under the "Linux build
+          # changes" heading separately, so keep that heading text in sync with
+          # its MIRROR_SECTION_HEADING. Boilerplate goes under the "## Full
           # Changelog" heading, which stops that parser and keeps it out of the
           # popup. The warning heading at the very top is a heading, which the
           # parser skips, so it still leads the GitHub page without polluting

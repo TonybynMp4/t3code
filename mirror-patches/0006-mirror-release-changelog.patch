@@ -1,0 +1,210 @@
+diff --git a/apps/desktop/src/updates/releaseNotes.ts b/apps/desktop/src/updates/releaseNotes.ts
+index 3cab5f15e4..851f5abd31 100644
+--- a/apps/desktop/src/updates/releaseNotes.ts
++++ b/apps/desktop/src/updates/releaseNotes.ts
+@@ -92,17 +92,36 @@ function isIgnoredReleaseNoteLine(line: string): boolean {
+   );
+ }
+ 
+-interface ExtractedReleaseNoteItems {
++interface ReleaseNoteItemList {
+   readonly items: ReadonlyArray<string>;
+   readonly totalItems: number;
+ }
+ 
+-function extractReleaseNoteItems(note: string | null | undefined): ExtractedReleaseNoteItems {
+-  if (!note) return { items: [], totalItems: 0 };
++interface ExtractedReleaseNoteItems {
++  readonly upstream: ReleaseNoteItemList;
++  readonly mirror: ReleaseNoteItemList;
++}
+ 
++const MIRROR_SECTION_HEADING = "linux build changes";
++
++function createItemCollector() {
+   const items: string[] = [];
+   let totalItems = 0;
+-  for (const rawLine of stripMarkup(note).split("\n")) {
++  return {
++    add(item: string) {
++      totalItems += 1;
++      items.push(truncateReleaseNoteItem(item));
++      if (items.length > MAX_RELEASE_NOTE_ITEMS_PER_GROUP) items.shift();
++    },
++    finish: (): ReleaseNoteItemList => ({ items: items.toReversed(), totalItems }),
++  };
++}
++
++function extractReleaseNoteItems(note: string | null | undefined): ExtractedReleaseNoteItems {
++  const upstream = createItemCollector();
++  const mirror = createItemCollector();
++  let target = upstream;
++  for (const rawLine of (note ? stripMarkup(note) : "").split("\n")) {
+     const item = rawLine
+       .trim()
+       .replace(/^[-*]\s+/, "")
+@@ -110,13 +129,24 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
+       .replace(/\s+/g, " ");
+     const normalized = normalizeReleaseNoteLine(item);
+     if (normalized === "new contributors" || normalized === "full changelog") break;
+-    if (/^#{1,6}\s+/.test(item)) continue;
++    if (/^#{1,6}\s+/.test(item)) {
++      target = normalized === MIRROR_SECTION_HEADING ? mirror : upstream;
++      continue;
++    }
+     if (isIgnoredReleaseNoteLine(item)) continue;
+-    totalItems += 1;
+-    items.push(truncateReleaseNoteItem(item));
+-    if (items.length > MAX_RELEASE_NOTE_ITEMS_PER_GROUP) items.shift();
++    target.add(item);
+   }
+-  return { items: items.toReversed(), totalItems };
++  return { upstream: upstream.finish(), mirror: mirror.finish() };
++}
++
++const RELEASED_AT_MARKER = /<!--\s*released-at:\s*([^\s>]+)\s*-->/;
++
++function extractReleaseNotePublishedAt(note: string | null | undefined): string | undefined {
++  const marker = note ? RELEASED_AT_MARKER.exec(note) : null;
++  if (!marker?.[1]) return undefined;
++  const parsed = Date.parse(marker[1]);
++  if (Number.isNaN(parsed)) return undefined;
++  return new Date(parsed).toISOString();
+ }
+ 
+ interface NormalizedDesktopUpdateReleaseNotes {
+@@ -147,13 +177,18 @@ export function normalizeDesktopUpdateReleaseNotes(
+   ).filter((entry) => resolveDefaultDesktopUpdateChannel(entry.version) === channel);
+ 
+   const normalizedNotes = rawNotes.flatMap((entry) => {
+-    const { items, totalItems } = extractReleaseNoteItems(entry.note);
+-    if (totalItems === 0) return [];
++    const { upstream, mirror } = extractReleaseNoteItems(entry.note);
++    if (upstream.totalItems === 0 && mirror.totalItems === 0) return [];
++    const publishedAt = extractReleaseNotePublishedAt(entry.note);
+     return [
+       {
+         version: entry.version,
+-        items,
+-        totalItems,
++        items: upstream.items,
++        totalItems: upstream.totalItems,
++        ...(mirror.totalItems > 0
++          ? { mirrorItems: mirror.items, mirrorTotalItems: mirror.totalItems }
++          : {}),
++        ...(publishedAt ? { publishedAt } : {}),
+       },
+     ];
+   });
+diff --git a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
+index 89204d1bd8..c91e22e8c8 100644
+--- a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
++++ b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
+@@ -1,6 +1,7 @@
+ import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
+ import { ExternalLinkIcon } from "lucide-react";
+ 
++import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
+ import {
+   getDesktopUpdateReleaseHistoryUrl,
+   getDesktopUpdateReleaseUrl,
+@@ -19,6 +20,30 @@ function keyReleaseNoteItems(items: ReadonlyArray<string>) {
+   });
+ }
+ 
++function ReleaseDate({ publishedAt }: { readonly publishedAt: string | undefined }) {
++  if (!publishedAt) return null;
++  const date = parseTimestampDate(publishedAt);
++  if (!date) return null;
++  const day = date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
++  return (
++    <span className="shrink-0 text-xs leading-4 font-normal text-muted-foreground">
++      {`${day} · ${formatRelativeTimeLabel(publishedAt)}`}
++    </span>
++  );
++}
++
++function ReleaseNoteItems({ items }: { readonly items: ReadonlyArray<string> }) {
++  return (
++    <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
++      {keyReleaseNoteItems(items).map(({ item, key }) => (
++        <li className="list-disc break-words" key={key}>
++          {item}
++        </li>
++      ))}
++    </ul>
++  );
++}
++
+ function ReleaseLink({
+   children,
+   releaseUrl,
+@@ -77,7 +102,10 @@ export function SidebarUpdateReleaseNotes({
+       <div className="min-h-0 max-h-[min(28rem,calc(100vh-6rem))] overflow-y-auto px-1 pt-4 pb-1">
+         {state.releaseNotes.map((releaseNote, index) => {
+           const releaseUrl = getDesktopUpdateReleaseUrl(releaseNote.version);
+-          const omittedItemCount = Math.max(0, releaseNote.totalItems - releaseNote.items.length);
++          const mirrorItems = releaseNote.mirrorItems ?? [];
++          const omittedItemCount =
++            Math.max(0, releaseNote.totalItems - releaseNote.items.length) +
++            Math.max(0, (releaseNote.mirrorTotalItems ?? 0) - mirrorItems.length);
+           const linkLabel =
+             omittedItemCount === 0
+               ? "View release on GitHub"
+@@ -87,16 +115,23 @@ export function SidebarUpdateReleaseNotes({
+             <div key={releaseNote.version}>
+               {index > 0 && <Separator className="my-3 bg-border/60" />}
+               <section>
+-                <h3 className="text-foreground text-xs leading-4 font-semibold">
+-                  {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
+-                </h3>
+-                <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
+-                  {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => (
+-                    <li className="list-disc break-words" key={key}>
+-                      {item}
+-                    </li>
+-                  ))}
+-                </ul>
++                <div className="flex items-baseline justify-between gap-3">
++                  <h3 className="text-foreground text-xs leading-4 font-semibold">
++                    {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
++                  </h3>
++                  <ReleaseDate publishedAt={releaseNote.publishedAt} />
++                </div>
++                {releaseNote.items.length > 0 ? (
++                  <ReleaseNoteItems items={releaseNote.items} />
++                ) : null}
++                {mirrorItems.length > 0 ? (
++                  <>
++                    <h4 className="mt-3 text-xs leading-4 font-medium text-muted-foreground">
++                      Linux build
++                    </h4>
++                    <ReleaseNoteItems items={mirrorItems} />
++                  </>
++                ) : null}
+                 {releaseUrl ? (
+                   <ReleaseLink releaseUrl={releaseUrl} shell={shell}>
+                     {linkLabel}
+diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
+index c67ecd27c0..3a52805b6e 100644
+--- a/packages/contracts/src/ipc.ts
++++ b/packages/contracts/src/ipc.ts
+@@ -295,12 +295,18 @@ export interface DesktopUpdateReleaseNote {
+   version: string;
+   items: ReadonlyArray<string>;
+   totalItems: number;
++  mirrorItems?: ReadonlyArray<string>;
++  mirrorTotalItems?: number;
++  publishedAt?: string;
+ }
+ 
+ export const DesktopUpdateReleaseNoteSchema = Schema.Struct({
+   version: Schema.String,
+   items: Schema.Array(Schema.String),
+   totalItems: Schema.Number,
++  mirrorItems: Schema.optional(Schema.Array(Schema.String)),
++  mirrorTotalItems: Schema.optional(Schema.Number),
++  publishedAt: Schema.optional(Schema.String),
+ });
+ 
+ export const DesktopUpdateStateSchema = Schema.Struct({
