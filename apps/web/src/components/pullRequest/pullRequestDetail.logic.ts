@@ -1086,6 +1086,7 @@ export function mergeRefusalHint(state: {
   readonly reviewDecision: PullRequestReviewDecision | null | undefined;
   readonly checksState: PullRequestChecksState | null;
 }): string | null {
+  if (state.mergeability === "unknown") return null;
   if (state.mergeability === "conflicting") {
     return "The branch conflicts with the base. Resolve the conflicts, then merge again.";
   }
