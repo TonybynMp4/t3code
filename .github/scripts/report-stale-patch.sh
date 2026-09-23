@@ -10,14 +10,30 @@ set -euo pipefail
 git checkout -- . 2>/dev/null || true
 
 # Name the patches that no longer apply, so the issue points at a file rather
-# than at a log the reader has to scroll.
+# than at a log the reader has to scroll. Variants of one NNNN prefix are
+# alternatives (see apply-mirror-patches.sh), so a group is stale only when none
+# of its variants apply; the unused variants of a working group are not.
 shopt -s nullglob
 stale=()
+checked=()
 for patch in mirror-patches/*.patch; do
-  if ! git apply --3way --check "$patch" >/dev/null 2>&1; then
-    stale+=("$patch")
+  base=$(basename "$patch")
+  prefix="${base%%-*}"
+  if [[ " ${checked[*]-} " == *" $prefix "* ]]; then
+    continue
   fi
-  git checkout -- . 2>/dev/null || true
+  checked+=("$prefix")
+  variants=(mirror-patches/"$prefix"-*.patch)
+  applies=0
+  for variant in "${variants[@]}"; do
+    if git apply --3way --check "$variant" >/dev/null 2>&1; then
+      applies=1
+    fi
+    git checkout -- . 2>/dev/null || true
+  done
+  if [[ "$applies" -eq 0 ]]; then
+    stale+=("${variants[@]}")
+  fi
 done
 if [[ "${#stale[@]}" -eq 0 ]]; then
   stale=(mirror-patches/*.patch)
