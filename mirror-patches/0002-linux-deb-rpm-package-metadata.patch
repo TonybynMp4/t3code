@@ -1,5 +1,5 @@
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index cb47e40b8..17e513520 100644
+index 02e514d83f..fd76eebbda 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
 @@ -930,6 +930,8 @@ interface StagePackageJson {
@@ -65,7 +65,7 @@ index cb47e40b8..17e513520 100644
    }
  
    if (platform === "win") {
-@@ -3651,7 +3690,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+@@ -3642,7 +3681,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
      private: true,
      packageManager: rootPackageJson.packageManager,
      description: "T3 Code desktop build",
