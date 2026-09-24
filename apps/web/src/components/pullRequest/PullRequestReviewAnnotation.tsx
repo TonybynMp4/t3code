@@ -124,8 +124,11 @@ export function ReviewThreadCard({
   fixLabel?: string;
   /** Absent where a thread is shown outside the pull request page's reach. */
   onFix?: () => void;
-  /** Absent where there is no composer beside the panel to add the conversation to. */
-  onAddToChat?: () => void;
+  /**
+   * Absent where there is no composer beside the panel to add the conversation to. Handed the
+   * thread with every comment the reader has loaded, not only the first page.
+   */
+  onAddToChat?: (thread: PullRequestReviewThread) => void;
   /** Resolves to whether the host took it, so a reply that failed keeps the words it was given. */
   onReply: (body: string) => Promise<boolean>;
   /** Reads one more page only after the reader asks for it. */
@@ -255,7 +258,7 @@ export function ReviewThreadCard({
             size="xs"
             variant="ghost"
             className={onFix ? undefined : "ml-auto"}
-            onClick={onAddToChat}
+            onClick={() => onAddToChat({ ...thread, comments })}
           >
             <MessageSquarePlusIcon className="size-3" />
             Add to chat

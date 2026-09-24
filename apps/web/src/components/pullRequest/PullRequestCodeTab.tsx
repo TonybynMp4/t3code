@@ -934,7 +934,9 @@ function PullRequestCodeTab({
         fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
         fixLabel={fixFindingLabel}
         {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
-        {...(onAddToChat ? { onAddToChat: () => onAddToChat({ kind: "thread", thread }) } : {})}
+        {...(onAddToChat
+          ? { onAddToChat: (loaded) => onAddToChat({ kind: "thread", thread: loaded }) }
+          : {})}
         onLoadMore={async (cursor): Promise<PullRequestThreadCommentsResult | null> => {
           const result = await loadThreadComments({
             environmentId,
