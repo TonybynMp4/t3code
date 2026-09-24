@@ -11,6 +11,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   HammerIcon,
+  MessageSquarePlusIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
@@ -46,6 +47,7 @@ import {
   pullRequestFindingKey,
   pullRequestReviewOutcome,
   visibleBody,
+  type PullRequestChatSubject,
   type PullRequestFinding,
 } from "./pullRequestDetail.logic";
 import {
@@ -466,6 +468,7 @@ export function PullRequestSummaryTab({
   fixFindingLabel = "Fix in a thread",
   fixCheckLabel = "Fix",
   onFixFinding,
+  onAddToChat,
   onRefresh,
   onRefreshChecks = onRefresh,
 }: {
@@ -481,6 +484,8 @@ export function PullRequestSummaryTab({
   fixFindingLabel?: string;
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
+  /** Absent where there is no composer beside the panel to add a remark to. */
+  onAddToChat?: (subject: PullRequestChatSubject) => void;
   onRefresh: () => void;
   onRefreshChecks?: () => void;
 }) {
@@ -689,6 +694,21 @@ export function PullRequestSummaryTab({
             >
               <HammerIcon className="size-3" />
               {pendingFinding === pullRequestFindingKey(finding) ? "Preparing..." : fixFindingLabel}
+            </Button>
+          ) : null}
+          {onAddToChat && (thread !== undefined || body !== null) ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              className="-mt-1 shrink-0"
+              onClick={() =>
+                onAddToChat(
+                  thread === undefined ? { kind: "comment", comment } : { kind: "thread", thread },
+                )
+              }
+            >
+              <MessageSquarePlusIcon className="size-3" />
+              Add to chat
             </Button>
           ) : null}
           {reactionBar}

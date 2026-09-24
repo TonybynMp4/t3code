@@ -970,6 +970,46 @@ export function buildPullRequestReferenceContext(
   return { ...comment, id: `pr-reference:${input.number}` };
 }
 
+/** A remark the reader can bring into the chat: a conversation on a line, or one comment. */
+export type PullRequestChatSubject = Extract<PullRequestFinding, { kind: "thread" | "comment" }>;
+
+/**
+ * A review conversation or remark brought into the chat to talk about, not to fix. The composer
+ * is left alone for the reader's own question. Like a composer reference it is the reader's chip:
+ * it sits outside the `pull-request-` namespace a hand-off sweeps, so several stack and a later
+ * hand-off leaves them in place. Null for a remark with no words in it.
+ */
+export function buildPullRequestCommentContext(
+  pullRequestNumber: number,
+  subject: PullRequestChatSubject,
+): ReviewCommentContext | null {
+  if (subject.kind === "thread") {
+    return {
+      ...reviewThreadContext(subject.thread, pullRequestNumber),
+      id: `pr-comment:${subject.thread.id}`,
+    };
+  }
+  const comment = subject.comment;
+  const body = visibleBody(comment.body);
+  if (body === null) return null;
+  const author = comment.author?.login ?? "ghost";
+  return {
+    id: `pr-comment:${comment.id}`,
+    sectionId: `pull-request:${pullRequestNumber}`,
+    sectionTitle: `PR #${pullRequestNumber} conversation`,
+    // The chip wears `filePath rangeLabel`: the file a remark names, or who wrote one that names none.
+    filePath: comment.path ?? `@${author}`,
+    startIndex: 0,
+    endIndex: 0,
+    rangeLabel: "comment",
+    text: bounded(`${author}: ${body}`),
+    diff: "",
+    ...(comment.path === null
+      ? {}
+      : { fenceLanguage: inferReviewCommentFenceLanguage(comment.path) }),
+  };
+}
+
 /** What the agent is asked to do with a question, as opposed to a task. */
 const ANSWER_INSTRUCTIONS = [
   "Answer the question asked in this message. Do not change any code, and do not check anything out unless asked to.",
