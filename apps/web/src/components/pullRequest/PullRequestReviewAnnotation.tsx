@@ -14,6 +14,7 @@ import {
   CircleIcon,
   HammerIcon,
   MessageSquareIcon,
+  MessageSquarePlusIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -102,6 +103,7 @@ export function ReviewThreadCard({
   fixPending,
   fixLabel = "Fix in a thread",
   onFix,
+  onAddToChat,
   onReply,
   onLoadMore,
   canEditComment,
@@ -122,6 +124,8 @@ export function ReviewThreadCard({
   fixLabel?: string;
   /** Absent where a thread is shown outside the pull request page's reach. */
   onFix?: () => void;
+  /** Absent where there is no composer beside the panel to add the conversation to. */
+  onAddToChat?: () => void;
   /** Resolves to whether the host took it, so a reply that failed keeps the words it was given. */
   onReply: (body: string) => Promise<boolean>;
   /** Reads one more page only after the reader asks for it. */
@@ -246,11 +250,22 @@ export function ReviewThreadCard({
             {fixPending ? "Preparing..." : fixLabel}
           </Button>
         ) : null}
-        {canResolve ? (
+        {onAddToChat ? (
           <Button
             size="xs"
             variant="ghost"
             className={onFix ? undefined : "ml-auto"}
+            onClick={onAddToChat}
+          >
+            <MessageSquarePlusIcon className="size-3" />
+            Add to chat
+          </Button>
+        ) : null}
+        {canResolve ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            className={onFix || onAddToChat ? undefined : "ml-auto"}
             disabled={pending}
             onClick={onToggleResolved}
           >
