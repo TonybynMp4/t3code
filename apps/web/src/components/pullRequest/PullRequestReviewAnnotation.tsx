@@ -29,6 +29,7 @@ import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import {
   editPullRequestThreadComment,
   mergePullRequestThreadComments,
+  visibleBody,
 } from "./pullRequestDetail.logic";
 import { PullRequestActorLabel } from "./pullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
@@ -253,7 +254,7 @@ export function ReviewThreadCard({
             {fixPending ? "Preparing..." : fixLabel}
           </Button>
         ) : null}
-        {onAddToChat ? (
+        {onAddToChat && comments.some((comment) => visibleBody(comment.body) !== null) ? (
           <Button
             size="xs"
             variant="ghost"

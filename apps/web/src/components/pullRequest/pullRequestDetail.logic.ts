@@ -1014,17 +1014,15 @@ export type PullRequestChatSubject = Extract<PullRequestFinding, { kind: "thread
  * A review conversation or remark brought into the chat to talk about, not to fix. The composer
  * is left alone for the reader's own question. Like a composer reference it is the reader's chip:
  * it sits outside the `pull-request-` namespace a hand-off sweeps, so several stack and a later
- * hand-off leaves them in place. Null for a remark with no words in it.
+ * hand-off leaves them in place. Null for a remark, or a whole conversation, with no words in it.
  */
 export function buildPullRequestCommentContext(
   pullRequestNumber: number,
   subject: PullRequestChatSubject,
 ): ReviewCommentContext | null {
   if (subject.kind === "thread") {
-    return {
-      ...reviewThreadContext(subject.thread, pullRequestNumber),
-      id: `pr-comment:${subject.thread.id}`,
-    };
+    const context = reviewThreadContext(subject.thread, pullRequestNumber);
+    return context.text === "" ? null : { ...context, id: `pr-comment:${subject.thread.id}` };
   }
   const comment = subject.comment;
   const body = readableBody(comment.body);

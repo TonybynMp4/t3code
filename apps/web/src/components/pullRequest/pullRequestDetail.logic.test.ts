@@ -1262,6 +1262,29 @@ describe("adding a remark to the chat", () => {
       }),
     ).toBeNull();
   });
+
+  it("brings nothing for a conversation with no words in it", () => {
+    const {
+      kind: _kind,
+      path: _path,
+      reviewState: _reviewState,
+      ...bookkeeping
+    } = remark("tc1", "<!-- bot bookkeeping -->");
+    expect(
+      buildPullRequestCommentContext(42, {
+        kind: "thread",
+        thread: {
+          id: "t1",
+          path: "src/app.ts",
+          line: 3,
+          side: "right",
+          isResolved: false,
+          isOutdated: false,
+          comments: [bookkeeping],
+        },
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("a second ask into the same composer", () => {
