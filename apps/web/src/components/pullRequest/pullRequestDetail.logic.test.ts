@@ -1242,6 +1242,18 @@ describe("adding a remark to the chat", () => {
     ]);
   });
 
+  it("drops a bot's bookkeeping so it cannot crowd the remark out of the bound", () => {
+    const context = buildPullRequestCommentContext(42, {
+      kind: "comment",
+      comment: remark(
+        "c1",
+        `<!-- ${"state".repeat(400)} -->\nThis leaks the token.\n\n\`\`\`html\n<!-- kept -->\n\`\`\``,
+      ),
+    });
+
+    expect(context?.text).toBe("octocat: This leaks the token.\n\n```html\n<!-- kept -->\n```");
+  });
+
   it("brings nothing for a remark with no words in it", () => {
     expect(
       buildPullRequestCommentContext(42, {
