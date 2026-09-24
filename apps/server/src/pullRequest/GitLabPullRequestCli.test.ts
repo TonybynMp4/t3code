@@ -957,6 +957,9 @@ layer("GitLabPullRequestCli.layer", (it) => {
           { jobs: null, bridges: "[]" },
           { jobs: full, bridges: "[]" },
           { jobs: "[]", bridges: full },
+          // A row that cannot be read may be the job that failed.
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          { jobs: JSON.stringify([job(1), { id: 2, status: "failed" }]), bridges: "[]" },
           { jobs: "[]", bridges: "[]" },
         ]) {
           mockedExecute.mockReset();
