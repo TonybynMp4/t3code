@@ -955,8 +955,8 @@ export const make = Effect.gen(function* () {
   /**
    * The head pipeline's jobs in place of the pipeline itself, so a failure names the job that
    * failed. The pipeline stays the one check wherever its jobs cannot stand for all of it: a
-   * failed read, a full page that may have left the failed job out, or a pipeline that has not
-   * created any jobs yet.
+   * failed read, a full page that may have left the failed job out, a row that could not be
+   * read and may have been the failed job, or a pipeline that has not created any jobs yet.
    */
   const withPipelineJobs =
     (cwd: string) =>
@@ -965,7 +965,9 @@ export const make = Effect.gen(function* () {
         ? Effect.succeed(detail)
         : pipelineJobs({ cwd, pipeline: detail.headPipeline }).pipe(
             Effect.map(({ checks, rawCounts }) =>
-              checks.length === 0 || rawCounts.some((count) => count >= MAX_PAGE_SIZE)
+              checks.length === 0 ||
+              rawCounts.some((count) => count >= MAX_PAGE_SIZE) ||
+              rawCounts.reduce((total, count) => total + count, 0) !== checks.length
                 ? detail
                 : { ...detail, checks },
             ),
