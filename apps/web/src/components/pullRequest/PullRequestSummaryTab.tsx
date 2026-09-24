@@ -192,12 +192,20 @@ function CommentBody({
 }
 
 /** Finished work — a resolved conversation or a dismissed review — opens collapsed. */
-/** A remark on a line goes to the chat as its whole conversation, the way fixing one does. */
+/**
+ * What Add to chat hands over for a remark: a remark on a line goes as its whole conversation,
+ * the way fixing one does. Null when there are no words in it to talk about.
+ */
 function chatSubject(
   comment: PullRequestComment,
   thread: PullRequestReviewThread | undefined,
-): PullRequestChatSubject {
-  return thread === undefined ? { kind: "comment", comment } : { kind: "thread", thread };
+): PullRequestChatSubject | null {
+  if (thread !== undefined) {
+    return thread.comments.some((entry) => visibleBody(entry.body) !== null)
+      ? { kind: "thread", thread }
+      : null;
+  }
+  return visibleBody(comment.body) === null ? null : { kind: "comment", comment };
 }
 
 function AddToChatButton({ onClick }: { onClick: () => void }) {
@@ -247,7 +255,7 @@ function CollapsedComment({
                 className={cn("size-3.5 transition-transform", open && "rotate-180")}
               />
             </CollapsibleTrigger>
-            {onAddToChat && body !== null ? <AddToChatButton onClick={onAddToChat} /> : null}
+            {onAddToChat ? <AddToChatButton onClick={onAddToChat} /> : null}
             {reactionBar}
           </div>
           <CommentLocation comment={comment} thread={thread} />
@@ -662,6 +670,7 @@ export function PullRequestSummaryTab({
 
   const renderComment = (comment: PullRequestComment) => {
     const thread = threadByCommentId.get(comment.id);
+    const chat = chatSubject(comment, thread);
     const body = visibleBody(comment.body);
     const outcome = pullRequestReviewOutcome(comment.reviewState);
     // An approval is a verdict, not a finding: there is nothing in it to fix.
@@ -716,8 +725,8 @@ export function PullRequestSummaryTab({
               {pendingFinding === pullRequestFindingKey(finding) ? "Preparing..." : fixFindingLabel}
             </Button>
           ) : null}
-          {onAddToChat && body !== null ? (
-            <AddToChatButton onClick={() => onAddToChat(chatSubject(comment, thread))} />
+          {onAddToChat && chat !== null ? (
+            <AddToChatButton onClick={() => onAddToChat(chat)} />
           ) : null}
           {reactionBar}
         </div>
@@ -1048,6 +1057,7 @@ export function PullRequestSummaryTab({
                     <div className="space-y-2 pt-2">
                       {orderPullRequestComments(finishedComments, commentOrder).map((comment) => {
                         const thread = threadByCommentId.get(comment.id);
+                        const chat = chatSubject(comment, thread);
                         return (
                           <CollapsedComment
                             key={comment.id}
@@ -1057,7 +1067,7 @@ export function PullRequestSummaryTab({
                             thread={thread}
                             label={thread?.isResolved ? "Resolved" : "Review dismissed"}
                             onAddToChat={
-                              onAddToChat && (() => onAddToChat(chatSubject(comment, thread)))
+                              onAddToChat && chat !== null ? () => onAddToChat(chat) : undefined
                             }
                             body={visibleBody(comment.body)}
                             reactionBar={

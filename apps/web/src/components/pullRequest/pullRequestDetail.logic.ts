@@ -466,39 +466,55 @@ export function visibleBody(body: string): string | null {
 }
 
 const HTML_COMMENT = /<!--[\s\S]*?-->/gu;
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/u;
+// A backtick fence's info string cannot hold a backtick, or "```x```" opening a line would read
+// as a fence rather than as inline code.
+const FENCE_OPEN = /^ {0,3}(?:(`{3,})[^`]*|(~{3,}).*)$/u;
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u;
 
 /**
  * A body as it reads, for text sent to the agent under a length bound. A bot's HTML-comment
  * bookkeeping would otherwise use up the bound before the remark got any of it. Comments inside
- * a code fence are source the remark is showing, so they stay. Null for a body with no words.
+ * a code fence are source the remark is showing, so they stay; a fence inside a comment is
+ * hidden with the rest of it. Null for a body with no words.
  */
 function readableBody(body: string): string | null {
   if (visibleBody(body) === null) return null;
   const kept: string[] = [];
-  let prose: string[] = [];
   let fence: string | null = null;
+  let inComment = false;
   for (const line of body.split("\n")) {
-    if (fence === null) {
-      const opening = FENCE_OPEN.exec(line)?.[1];
-      if (opening === undefined) {
-        prose.push(line);
-        continue;
-      }
-      kept.push(prose.join("\n").replace(HTML_COMMENT, ""));
-      prose = [];
-      fence = opening;
+    if (fence !== null) {
       kept.push(line);
+      const closing = FENCE_CLOSE.exec(line)?.[1];
+      if (closing !== undefined && closing[0] === fence[0] && closing.length >= fence.length) {
+        fence = null;
+      }
       continue;
     }
-    kept.push(line);
-    const closing = FENCE_CLOSE.exec(line)?.[1];
-    if (closing !== undefined && closing[0] === fence[0] && closing.length >= fence.length) {
-      fence = null;
+    let rest = line;
+    if (inComment) {
+      const end = rest.indexOf("-->");
+      if (end === -1) continue;
+      rest = rest.slice(end + 3);
+      inComment = false;
+    } else {
+      const opening = FENCE_OPEN.exec(line);
+      if (opening !== null) {
+        fence = opening[1] ?? opening[2] ?? null;
+        kept.push(line);
+        continue;
+      }
     }
+    rest = rest.replace(HTML_COMMENT, "");
+    const unclosed = rest.indexOf("<!--");
+    if (unclosed !== -1) {
+      rest = rest.slice(0, unclosed);
+      inComment = true;
+    }
+    // A line that was all comment is dropped rather than left as a blank one.
+    if (rest.trim() === "" && line.trim() !== "") continue;
+    kept.push(rest);
   }
-  kept.push(prose.join("\n").replace(HTML_COMMENT, ""));
   return kept.join("\n").trim();
 }
 
