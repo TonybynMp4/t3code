@@ -465,6 +465,43 @@ export function visibleBody(body: string): string | null {
   return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
 }
 
+const HTML_COMMENT = /<!--[\s\S]*?-->/gu;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/u;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u;
+
+/**
+ * A body as it reads, for text sent to the agent under a length bound. A bot's HTML-comment
+ * bookkeeping would otherwise use up the bound before the remark got any of it. Comments inside
+ * a code fence are source the remark is showing, so they stay. Null for a body with no words.
+ */
+function readableBody(body: string): string | null {
+  if (visibleBody(body) === null) return null;
+  const kept: string[] = [];
+  let prose: string[] = [];
+  let fence: string | null = null;
+  for (const line of body.split("\n")) {
+    if (fence === null) {
+      const opening = FENCE_OPEN.exec(line)?.[1];
+      if (opening === undefined) {
+        prose.push(line);
+        continue;
+      }
+      kept.push(prose.join("\n").replace(HTML_COMMENT, ""));
+      prose = [];
+      fence = opening;
+      kept.push(line);
+      continue;
+    }
+    kept.push(line);
+    const closing = FENCE_CLOSE.exec(line)?.[1];
+    if (closing !== undefined && closing[0] === fence[0] && closing.length >= fence.length) {
+      fence = null;
+    }
+  }
+  kept.push(prose.join("\n").replace(HTML_COMMENT, ""));
+  return kept.join("\n").trim();
+}
+
 /**
  * Flattens creation, commits, comments/reviews, and the terminal event into one list, newest
  * first. What happened last is what a reader opening the tab is asking about — whether it merged,
@@ -613,7 +650,7 @@ function reviewThreadContext(
     text: bounded(
       thread.comments
         .flatMap((comment) => {
-          const body = visibleBody(comment.body);
+          const body = readableBody(comment.body);
           return body === null ? [] : [`${comment.author?.login ?? "ghost"}: ${body}`];
         })
         .join("\n"),
@@ -990,7 +1027,7 @@ export function buildPullRequestCommentContext(
     };
   }
   const comment = subject.comment;
-  const body = visibleBody(comment.body);
+  const body = readableBody(comment.body);
   if (body === null) return null;
   const author = comment.author?.login ?? "ghost";
   return {
