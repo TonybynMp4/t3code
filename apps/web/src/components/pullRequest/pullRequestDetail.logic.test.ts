@@ -1254,6 +1254,24 @@ describe("adding a remark to the chat", () => {
     expect(context?.text).toBe("octocat: This leaks the token.\n\n```html\n<!-- kept -->\n```");
   });
 
+  it("keeps a fence written inside a hidden comment hidden", () => {
+    const context = buildPullRequestCommentContext(42, {
+      kind: "comment",
+      comment: remark("c1", '<!-- state\n```json\n{"secret": 1}\n```\n-->\nLooks good.'),
+    });
+
+    expect(context?.text).toBe("octocat: Looks good.");
+  });
+
+  it("reads inline code at the start of a line as prose, not as a fence", () => {
+    const context = buildPullRequestCommentContext(42, {
+      kind: "comment",
+      comment: remark("c1", "```x``` is unused <!-- bot -->\nRemove it."),
+    });
+
+    expect(context?.text).toBe("octocat: ```x``` is unused \nRemove it.");
+  });
+
   it("brings nothing for a remark with no words in it", () => {
     expect(
       buildPullRequestCommentContext(42, {
