@@ -1263,6 +1263,15 @@ describe("adding a remark to the chat", () => {
     expect(context?.text).toBe("octocat: Looks good.");
   });
 
+  it("closes a fence written with CRLF line endings", () => {
+    const context = buildPullRequestCommentContext(42, {
+      kind: "comment",
+      comment: remark("c1", "```ts\r\nconst x = 1;\r\n```\r\n<!-- bot -->\r\nRename x."),
+    });
+
+    expect(context?.text).toBe("octocat: ```ts\nconst x = 1;\n```\nRename x.");
+  });
+
   it("reads inline code at the start of a line as prose, not as a fence", () => {
     const context = buildPullRequestCommentContext(42, {
       kind: "comment",
