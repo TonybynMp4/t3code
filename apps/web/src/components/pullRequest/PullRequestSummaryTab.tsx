@@ -192,6 +192,23 @@ function CommentBody({
 }
 
 /** Finished work — a resolved conversation or a dismissed review — opens collapsed. */
+/** A remark on a line goes to the chat as its whole conversation, the way fixing one does. */
+function chatSubject(
+  comment: PullRequestComment,
+  thread: PullRequestReviewThread | undefined,
+): PullRequestChatSubject {
+  return thread === undefined ? { kind: "comment", comment } : { kind: "thread", thread };
+}
+
+function AddToChatButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button size="xs" variant="ghost" className="-mt-1 shrink-0" onClick={onClick}>
+      <MessageSquarePlusIcon className="size-3" />
+      Add to chat
+    </Button>
+  );
+}
+
 function CollapsedComment({
   comment,
   editing,
@@ -200,6 +217,7 @@ function CollapsedComment({
   reactionBar,
   detail,
   thread,
+  onAddToChat,
 }: {
   comment: PullRequestComment;
   editing: CommentEditing;
@@ -209,6 +227,7 @@ function CollapsedComment({
   reactionBar: ReactNode;
   detail: PullRequestDetailView;
   thread: PullRequestReviewThread | undefined;
+  onAddToChat?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const statusTriggerRef = useRef<HTMLButtonElement>(null);
@@ -228,6 +247,7 @@ function CollapsedComment({
                 className={cn("size-3.5 transition-transform", open && "rotate-180")}
               />
             </CollapsibleTrigger>
+            {onAddToChat && body !== null ? <AddToChatButton onClick={onAddToChat} /> : null}
             {reactionBar}
           </div>
           <CommentLocation comment={comment} thread={thread} />
@@ -696,20 +716,8 @@ export function PullRequestSummaryTab({
               {pendingFinding === pullRequestFindingKey(finding) ? "Preparing..." : fixFindingLabel}
             </Button>
           ) : null}
-          {onAddToChat && (thread !== undefined || body !== null) ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="-mt-1 shrink-0"
-              onClick={() =>
-                onAddToChat(
-                  thread === undefined ? { kind: "comment", comment } : { kind: "thread", thread },
-                )
-              }
-            >
-              <MessageSquarePlusIcon className="size-3" />
-              Add to chat
-            </Button>
+          {onAddToChat && body !== null ? (
+            <AddToChatButton onClick={() => onAddToChat(chatSubject(comment, thread))} />
           ) : null}
           {reactionBar}
         </div>
@@ -1048,6 +1056,9 @@ export function PullRequestSummaryTab({
                             detail={detail}
                             thread={thread}
                             label={thread?.isResolved ? "Resolved" : "Review dismissed"}
+                            onAddToChat={
+                              onAddToChat && (() => onAddToChat(chatSubject(comment, thread)))
+                            }
                             body={visibleBody(comment.body)}
                             reactionBar={
                               <PullRequestReactionBar
