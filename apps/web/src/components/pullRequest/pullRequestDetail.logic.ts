@@ -482,7 +482,9 @@ function readableBody(body: string): string | null {
   const kept: string[] = [];
   let fence: string | null = null;
   let inComment = false;
-  for (const line of body.split("\n")) {
+  // Hosts pass bodies on with whatever line endings they were written with, and a `\r` left on a
+  // closing fence would hold the fence open over everything after it.
+  for (const line of body.split(/\r\n|\r|\n/u)) {
     if (fence !== null) {
       kept.push(line);
       const closing = FENCE_CLOSE.exec(line)?.[1];
