@@ -3,9 +3,9 @@ name: Mirror Linux build
 # Builds .deb and .rpm for x64 and arm64 from an upstream tag and publishes
 # them as a release on this fork. Upstream's own release workflow ships Linux
 # only as an AppImage, so this fills in the distro packages upstream never builds
-# without touching any upstream file. The AppImage is left to upstream; the
-# auto-update patch makes these .deb/.rpm installs updatable in place from this
-# fork's releases.
+# without touching any upstream file. Upstream now ships a self-updating .deb,
+# so these builds point the in-app updater at upstream's releases: a .deb
+# install updates once more from here, then moves onto the official .deb.
 #
 # Every step here mirrors the Linux matrix entries of upstream's
 # .github/workflows/release.yml. When those gain a dependency, this
@@ -126,8 +126,7 @@ jobs:
         include:
           # Only the distro packages upstream never ships: .deb and .rpm, x64
           # and arm64. Upstream already provides an AppImage, so this fork does
-          # not rebuild one; the auto-update patch makes .deb/.rpm updatable in
-          # place, which is the whole point of building them here.
+          # not rebuild one.
           - target: deb
             arch: x64
             runner: ubuntu-26.04
@@ -145,11 +144,13 @@ jobs:
             runner: ubuntu-26.04-arm
             rust_target: aarch64-unknown-linux-gnu
     env:
-      # Without this, electron-builder derives the update feed from
-      # GITHUB_REPOSITORY, which is already this fork. Setting it explicitly
-      # keeps that intentional rather than incidental, and guarantees a build
-      # run from a differently-named repo never points users at upstream.
-      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+      # Upstream publishes a .deb that updates itself, so the update feed is
+      # upstream's, not this fork's. A .deb install that updates to this build
+      # then takes its next update from pingdotgg/t3code, replacing this
+      # package in place (same `t3code` package name). Upstream ships no .rpm,
+      # and without the old deb/rpm updater patch the .rpm build reports
+      # updates as unavailable instead of polling a feed with nothing for it.
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: pingdotgg/t3code
       # Upstream's public T3 Connect config, as baked into its own release
       # builds. Without it cloud sign-in and T3 Connect are compiled out.
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
@@ -600,7 +601,8 @@ jobs:
             echo "These are **not** official T3 Code builds. They are produced by this fork from unmodified upstream source at [\`$TAG\`](https://github.com/pingdotgg/t3code/releases/tag/$TAG), because upstream CI ships Linux only as an AppImage. This tag is $channel_note."
             echo
             echo "- Formats: \`.deb\` and \`.rpm\`, x64 and arm64"
-            echo "- **Auto-update works**, from this fork's releases. Installs prompt once for your password (via \`pkexec\`) because the update is applied with \`dpkg\`/\`rpm\`, the same way Windows prompts through UAC. A desktop without \`pkexec\` cannot auto-update; reinstall the newer package by hand."
+            echo "- **This fork is retiring.** Upstream now ships an official self-updating \`.deb\`. A \`.deb\` install that updates to this release takes its next update from the official [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases) and needs nothing else from you."
+            echo "- Upstream ships no \`.rpm\`, so \`.rpm\` installs no longer auto-update. Switch to the official AppImage or \`.deb\`."
             echo "- For the AppImage, use the official [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases) - this fork does not rebuild it."
             echo
             echo "For official builds, use [pingdotgg/t3code releases](https://github.com/pingdotgg/t3code/releases)."

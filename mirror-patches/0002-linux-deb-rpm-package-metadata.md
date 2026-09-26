@@ -1,38 +1,17 @@
 # 0002-linux-deb-rpm-package-metadata.patch
 
-Fills in the package metadata that `.deb`/`.rpm` targets need and upstream never
-does, since its own CI only builds an AppImage.
+Fills in the `.rpm` package metadata upstream does not set, since upstream
+builds only the AppImage and `.deb`.
 
-`buildDesktopArtifact` in `scripts/build-desktop-artifact.ts` writes a fresh
-`package.json` into the staged app directory rather than reusing
-`apps/desktop/package.json`, so `author`, `homepage` and `license` have to be set
-there. `FpmTarget` reads `license` straight off that staged metadata for the rpm
-`License:` tag. `createBuildConfig`'s Linux branch carries the rest:
+- `license` on the staged `package.json` that `buildDesktopArtifact` writes.
+  `FpmTarget` reads it straight off that metadata for the rpm `License:` tag.
+- `rpm.depends`: electron-builder's defaults plus the ALSA and GBM libraries,
+  which Electron links against but the defaults omit, so a minimal install
+  could not start the app. `depends` replaces the defaults, so they are copied;
+  the install job in `mirror-linux-build.yml` catches it with `ldd` if the list
+  falls behind again.
 
-- `maintainer`, which fpm checks independently of the top-level `author`.
-- `synopsis` and `description`. Upstream's staged `description` is the
-  build-internal string `"T3 Code desktop build"`, and
-  `LinuxTargetHelper.getDescription` feeds it to the deb `Description:` field,
-  the rpm `%description`, and the `.desktop` `Comment` — so it surfaced verbatim
-  in `apt show` and as both title and subtitle in GNOME Software. It ends by
-  saying the build is unofficial, as does the AppStream description in 0003,
-  since both are what users see before installing.
-- `desktop.entry` additions (`GenericName`, `Keywords`). `Keywords` is a
-  desktop-entry string list, so it keeps its trailing `;` — dropping it makes
-  the whole value invalid. `Comment` is deliberately not set there:
-  `LinuxTargetHelper.writeDesktopEntry` merges `desktop.entry` first and then
-  overwrites `Comment` from `description`, so an entry value would be silently
-  dropped.
-- `deb.depends` and `rpm.depends`: electron-builder's defaults plus the ALSA
-  and GBM libraries, which Electron links against but the defaults omit, so a
-  minimal install could not start the app. `depends` replaces the defaults, so
-  they are copied; the install job in `mirror-linux-build.yml` catches it with
-  `ldd` if the list falls behind again.
-- `deb.recommends` and `deb.packageCategory`. `recommends` includes
-  `policykit-1 | pkexec` because electron-updater installs a downloaded `.deb`
-  through `pkexec`. It also repeats electron-builder's own default
-  (`libappindicator3-1`): in 26.15.6 `FpmTarget` *replaces* the defaults when
-  `recommends` is set rather than extending them, and there is no `"default"`
-  sentinel. If a future electron-builder gains one, prefer it over the copy.
+The `.deb` metadata this patch used to carry (maintainer, synopsis, homepage,
+`deb.depends`) is upstream's now.
 
 If it stops applying, reapply the same fields wherever this logic moved to.

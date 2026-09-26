@@ -15,9 +15,9 @@ They are not official. Nobody at T3 Tools signs off on them, and bugs you hit he
 
 Two things worth knowing before you install:
 
-**Auto-update works, and it updates from this fork.** The in-app "Update available" flow works on both formats. `.deb` and `.rpm` prompt once for your password through `pkexec`, because applying the update means running `dpkg -i` or `rpm -U` as root - the same trade Windows makes with its UAC prompt. No apt or dnf repository to add, and no waiting for a scheduled `apt upgrade`.
+**This fork is retiring.** Upstream now ships an official `.deb` that updates itself, so these builds point the in-app updater at upstream's releases. A `.deb` install updates once more from here, then takes every later update from `pingdotgg/t3code`, which replaces this package in place (both are named `t3code`). Nothing to do by hand.
 
-These builds update from **this fork's** releases, not upstream's, since that is where the distro packages live. Moving to an official build later means downloading it from upstream once.
+Upstream ships no `.rpm`. `.rpm` builds from here report automatic updates as unavailable; switch to upstream's AppImage or `.deb`.
 
 **Cloud sign-in and T3 Connect work, against upstream's service.** The build bakes in the same public Clerk and relay config upstream's own release builds carry (`T3CODE_CLERK_*`, `T3CODE_RELAY_URL` in `mirror-linux-build.yml`), so these builds use the maintainers' relay infrastructure exactly like an official install. If upstream rotates any of those values, update them there.
 
@@ -57,13 +57,9 @@ Two things this fork adds that upstream's Linux job does not need:
 
 Each matrix entry emits its own `latest-linux.yml` (or `latest-linux-arm64.yml`) describing only the artifact that run produced, because upstream's script builds one target per invocation. Publishing them as-is would let the last upload win and leave two formats permanently without updates, so `.github/scripts/merge-linux-update-manifests.py` unions them per architecture in the publish job. That is the same feed a single multi-target build would have written, and electron-updater picks its own format out of it.
 
-## The auto-update patch
+## The update feed
 
-Everything else here is additive, but in-app updates for `.deb`/`.rpm` need one upstream file changed: `apps/desktop/src/updates/DesktopUpdates.ts` refuses to update any Linux build that is not an AppImage, so the feature is unreachable no matter what CI publishes.
-
-The capability itself is already present and needs no new code. electron-builder writes a `package-type` resource into `deb`/`rpm`/`pacman` builds whenever a publish config exists, and electron-updater's entry point reads that file to construct a `DebUpdater` or `RpmUpdater` instead of an `AppImageUpdater`. Those install via `pkexec dpkg -i` / `pkexec rpm -U` and relaunch. The patch replaces the AppImage-only check with one that also accepts a detected `package-type`, which is the marker electron-updater itself trusts.
-
-Upstream marks deb/rpm updates a beta feature, and it does need a working `pkexec`; a desktop without polkit falls back to `gksudo`/`kdesudo` and otherwise fails the install step. Anyone who needs a self-contained, sandbox-friendly build can use upstream's AppImage instead.
+`T3CODE_DESKTOP_UPDATE_REPOSITORY` in `mirror-linux-build.yml` is `pingdotgg/t3code`, so electron-builder bakes upstream's releases into `app-update.yml`. Upstream's `DesktopUpdates.ts` enables updates for a `.deb` (electron-builder writes a `package-type` resource into it, and electron-updater installs through `pkexec dpkg -i`), and upstream's `nightly-linux.yml` / `latest-linux.yml` list its `.deb`. The `.rpm` has no upstream counterpart, and upstream's check keeps its updater off.
 
 ## How patches are carried
 
@@ -83,8 +79,6 @@ Preflight files an issue labelled `mirror-patch` naming the patch and linking th
 
 Assignment needs a `MIRROR_COPILOT_TOKEN` repository secret holding a PAT with issue write access; `GITHUB_TOKEN` cannot assign the Copilot agent. Without it, the issue is still filed - only the automatic PR is missing. Subsequent failures comment on the open issue instead of opening new ones, since upstream cuts nightlies faster than anyone fixes a patch.
 
-## Upstreaming
+## Retiring
 
-The auto-update patch is worth offering upstream. It is three lines and benefits them the moment they ship any distro package. It is also arguably a bug fix: the current check asks "is this an AppImage" when what it means is "can this install be updated", and electron-updater already answers that question more precisely.
-
-This fork is worth keeping for `.deb` and `.rpm` either way, since those carry real packaging support burden upstream has not signed up for.
+Once a release built with the upstream feed is out on each channel users are on, disable `mirror-sync.yml` (Actions → Mirror upstream → Disable workflow). A stable-channel install only moves over after this fork publishes a stable release with that feed, so leave the sync running until the next upstream stable tag has built here.

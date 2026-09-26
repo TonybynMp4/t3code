@@ -33,8 +33,7 @@ targets, not only when it stops applying.
 
 | Patch                                                                           | What it does                                                       |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`0001-linux-deb-rpm-auto-update`](0001-linux-deb-rpm-auto-update.md)           | Lets `.deb`/`.rpm` installs use the in-app updater.                |
-| [`0002-linux-deb-rpm-package-metadata`](0002-linux-deb-rpm-package-metadata.md) | Fills in the package metadata `.deb`/`.rpm` need.                  |
+| [`0002-linux-deb-rpm-package-metadata`](0002-linux-deb-rpm-package-metadata.md) | Fills in the package metadata `.rpm` needs.                        |
 | [`0003-linux-appstream-metainfo`](0003-linux-appstream-metainfo.md)             | Ships an AppStream component so software centres describe the app. |
 | [`0004-linux-desktop-entry-identity`](0004-linux-desktop-entry-identity.md)     | Makes a `.deb`/`.rpm` install group under its own launcher icon.   |
 | [`0005-updater-error-cause-logging`](0005-updater-error-cause-logging.md)       | Logs why an updater check, download or install failed.             |

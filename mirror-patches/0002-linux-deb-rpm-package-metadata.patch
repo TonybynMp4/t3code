@@ -1,53 +1,19 @@
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 02e514d83f..fd76eebbda 100644
+index d2d9df7679..1fdebd3684 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
-@@ -930,6 +930,8 @@ interface StagePackageJson {
+@@ -930,6 +930,7 @@ interface StagePackageJson {
    readonly packageManager: string;
    readonly description: string;
-   readonly author: string;
-+  readonly homepage: string;
+   readonly homepage: string;
 +  readonly license: string;
+   readonly author: string;
    readonly main: string;
    readonly build: Record<string, unknown>;
-   readonly dependencies: Record<string, unknown>;
-@@ -2737,6 +2739,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
-       executableName: "t3code",
-       icon: "icons",
-       category: "Development",
-+      maintainer: "T3 Tools <97451137+TonybynMp4@users.noreply.github.com>",
-+      synopsis: "The open-source control plane for coding agents",
-+      description:
-+        "Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscriptions. Unofficial community build of T3 Code.",
-       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
-       // in the .desktop entry (Exec already gets %U), so browsers can hand
-       // t3code:// OAuth callbacks to the app.
-@@ -2749,9 +2755,42 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
-       desktop: {
-         entry: {
-           StartupWMClass: "t3code",
-+          GenericName: "Coding Agent Control Surface",
-+          Keywords: "agent;ai;coding;codex;claude;cursor;grok;opencode;antigravity;developer;",
-         },
-       },
+@@ -2777,6 +2778,20 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+         "xdg-utils",
+       ],
      };
-+    buildConfig.deb = {
-+      depends: [
-+        "libgtk-3-0",
-+        "libnotify4",
-+        "libnss3",
-+        "libxss1",
-+        "libxtst6",
-+        "xdg-utils",
-+        "libatspi2.0-0",
-+        "libuuid1",
-+        "libsecret-1-0",
-+        "libasound2",
-+        "libgbm1",
-+      ],
-+      recommends: ["libappindicator3-1", "policykit-1 | pkexec"],
-+      packageCategory: "devel",
-+    };
 +    buildConfig.rpm = {
 +      depends: [
 +        "gtk3",
@@ -65,14 +31,11 @@ index 02e514d83f..fd76eebbda 100644
    }
  
    if (platform === "win") {
-@@ -3642,7 +3681,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
-     private: true,
-     packageManager: rootPackageJson.packageManager,
+@@ -3669,6 +3684,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
      description: "T3 Code desktop build",
--    author: "T3 Tools",
-+    author: "T3 Tools <97451137+TonybynMp4@users.noreply.github.com>",
-+    homepage: "https://github.com/TonybynMp4/t3code",
+     // Required by the .deb control file.
+     homepage: "https://t3.codes",
 +    license: "MIT",
-     main: "apps/desktop/dist-electron/main.cjs",
+     author: "T3 Tools",
+     main: "apps/desktop/dist-electron/boot.cjs",
      build: yield* createBuildConfig(
-       options.platform,
