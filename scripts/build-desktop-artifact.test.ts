@@ -2031,7 +2031,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "x64",
         "/tmp/stage/metainfo.xml",
       );
-      const metainfo = renderAppStreamMetainfo({ version, releaseDate: "2026-08-15" });
+      const metainfo = renderAppStreamMetainfo({ version, buildDate: "2026-09-01" });
       const linux = config.linux as Record<string, unknown>;
 
       assert.deepStrictEqual((config.deb as Record<string, unknown>).fpm, [
@@ -2048,6 +2048,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.include(metainfo, `<release version="${version}" date="2026-08-15" />`);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
+
+  it("dates a stable AppStream release by its build", () => {
+    assert.include(
+      renderAppStreamMetainfo({ version: "1.2.3", buildDate: "2026-09-01" }),
+      `<release version="1.2.3" date="2026-09-01" />`,
+    );
+  });
 
   it.effect("keeps executable resource editing enabled for unsigned Windows builds", () =>
     Effect.gen(function* () {
