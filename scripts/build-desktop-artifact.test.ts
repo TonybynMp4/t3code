@@ -43,6 +43,9 @@ import {
   preflightLinuxDesktopBuild,
   preflightMacDesktopBuild,
   preflightWindowsDesktopBuild,
+  LINUX_METAINFO_PATH,
+  STAGE_PACKAGE_NAME,
+  renderAppStreamMetainfo,
   renderMacPasskeyEntitlements,
   resolveClerkPasskeyNativeArtifacts,
   resolveMacPasskeySigningConfiguration,
@@ -1956,6 +1959,39 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         (config.dmg as Record<string, unknown>).background,
         "dmg/dmg-background-nightly.png",
       );
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("installs an AppStream component bound to the packaged launcher", () =>
+    Effect.gen(function* () {
+      const version = "1.2.3-nightly.20260815.1";
+      const config = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        version,
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "x64",
+        "/tmp/stage/metainfo.xml",
+      );
+      const metainfo = renderAppStreamMetainfo({ version, releaseDate: "2026-08-15" });
+      const linux = config.linux as Record<string, unknown>;
+
+      assert.deepStrictEqual((config.deb as Record<string, unknown>).fpm, [
+        `/tmp/stage/metainfo.xml=${LINUX_METAINFO_PATH}`,
+      ]);
+      // Software centres drop the component unless these match the launcher
+      // and package electron-builder installs.
+      assert.include(
+        metainfo,
+        `<launchable type="desktop-id">${String(linux.executableName)}.desktop</launchable>`,
+      );
+      assert.include(metainfo, `<pkgname>${STAGE_PACKAGE_NAME}</pkgname>`);
+      assert.include(metainfo, `<name>${String(config.productName)}</name>`);
+      assert.include(metainfo, `<release version="${version}" date="2026-08-15" />`);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
