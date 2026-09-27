@@ -2632,11 +2632,17 @@ export const LINUX_METAINFO_PATH = `/usr/share/metainfo/${DESKTOP_APP_ID}.metain
 // fields. The component only binds to the installed package and launcher
 // through <pkgname> and <launchable>, so both must match what electron-builder
 // installs: STAGE_PACKAGE_NAME and `${executableName}.desktop`. <name> must
-// match the launcher's Name, which is the product name.
+// match the launcher's Name, which is the product name. A nightly's release
+// date is the one in its version, so rebuilding it later keeps the date;
+// other versions are released when they are built.
 export function renderAppStreamMetainfo(input: {
   readonly version: string;
-  readonly releaseDate: string;
+  readonly buildDate: string;
 }): string {
+  const nightlyDate = /-nightly\.(\d{4})(\d{2})(\d{2})\.\d+$/.exec(input.version);
+  const releaseDate = nightlyDate
+    ? `${nightlyDate[1]}-${nightlyDate[2]}-${nightlyDate[3]}`
+    : input.buildDate;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>${DESKTOP_APP_ID}</id>
@@ -2661,7 +2667,7 @@ export function renderAppStreamMetainfo(input: {
   <url type="vcs-browser">https://github.com/pingdotgg/t3code</url>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="${escapeXml(input.version)}" date="${escapeXml(input.releaseDate)}" />
+    <release version="${escapeXml(input.version)}" date="${escapeXml(releaseDate)}" />
   </releases>
 </component>
 `;
@@ -3674,7 +3680,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       linuxMetainfoPath,
       renderAppStreamMetainfo({
         version: appVersion,
-        releaseDate: DateTime.formatIsoDateUtc(yield* DateTime.now),
+        buildDate: DateTime.formatIsoDateUtc(yield* DateTime.now),
       }),
     );
   }
