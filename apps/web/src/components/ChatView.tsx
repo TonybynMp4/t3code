@@ -167,7 +167,6 @@ import {
 } from "../proposedPlan";
 import {
   DEFAULT_INTERACTION_MODE,
-  DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
   isImageAttachment,
@@ -281,6 +280,7 @@ import {
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { resolveProjectScriptTerminal } from "../lib/projectScriptTerminal";
 import {
   preventRepeatedTerminalCloseShortcut,
   preventTerminalCloseShortcut,
@@ -4195,11 +4195,15 @@ export default function ChatView(props: ChatViewProps) {
         });
       }
       const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
-      const baseTerminalId =
-        terminalUiState.activeTerminalId || activeKnownTerminalIds[0] || DEFAULT_THREAD_TERMINAL_ID;
-      const isBaseTerminalBusy = runningTerminalIds.includes(baseTerminalId);
-      const wantsNewTerminal = Boolean(options?.preferNewTerminal) || isBaseTerminalBusy;
-      const shouldCreateNewTerminal = wantsNewTerminal;
+      const { terminalId: targetTerminalId, isNew: shouldCreateNewTerminal } =
+        resolveProjectScriptTerminal({
+          drawerTerminalIds: terminalUiState.terminalIds,
+          activeTerminalId: terminalUiState.activeTerminalId,
+          panelTerminalIds,
+          allocatableTerminalIds: allocatableActiveTerminalIds,
+          runningTerminalIds,
+          preferNewTerminal: Boolean(options?.preferNewTerminal),
+        });
       const targetWorktreePath = options?.worktreePath ?? activeThread.worktreePath ?? null;
 
       setTerminalUiLaunchContext({
@@ -4207,7 +4211,6 @@ export default function ChatView(props: ChatViewProps) {
         cwd: targetCwd,
         worktreePath: targetWorktreePath,
       });
-      setTerminalOpen(true);
       if (!activeThreadRef) {
         return;
       }
@@ -4220,9 +4223,6 @@ export default function ChatView(props: ChatViewProps) {
         worktreePath: targetWorktreePath,
         ...(options?.env ? { extraEnv: options.env } : {}),
       });
-      const targetTerminalId = shouldCreateNewTerminal
-        ? nextTerminalId(allocatableActiveTerminalIds)
-        : baseTerminalId;
       const openTerminalInput: TerminalOpenInput = shouldCreateNewTerminal
         ? {
             threadId: activeThreadId,
@@ -4241,10 +4241,13 @@ export default function ChatView(props: ChatViewProps) {
             env: runtimeEnv,
           };
 
+      // Apply the target before opening: opening an empty drawer would otherwise claim
+      // DEFAULT_THREAD_TERMINAL_ID, which a right-panel terminal may already own.
       if (shouldCreateNewTerminal) {
         storeNewTerminal(activeThreadRef, targetTerminalId);
       } else {
         storeSetActiveTerminal(activeThreadRef, targetTerminalId);
+        setTerminalOpen(true);
       }
 
       const openResult = await openTerminal({ environmentId, input: openTerminalInput });
@@ -4288,10 +4291,11 @@ export default function ChatView(props: ChatViewProps) {
       setLastInvokedScriptByProjectId,
       environmentId,
       openTerminal,
-      activeKnownTerminalIds,
       allocatableActiveTerminalIds,
+      panelTerminalIds,
       runningTerminalIds,
       terminalUiState.activeTerminalId,
+      terminalUiState.terminalIds,
       writeTerminal,
     ],
   );
