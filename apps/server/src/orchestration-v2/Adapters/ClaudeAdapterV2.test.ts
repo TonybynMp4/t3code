@@ -18,6 +18,7 @@ import {
   type ModelSelection,
   NodeId,
   type OrchestrationV2AppThread,
+  type OrchestrationV2PlanArtifact,
   type OrchestrationV2ProviderThread,
   ProjectId,
   ProviderInstanceId,
@@ -1062,11 +1063,12 @@ describe("ClaudeAdapterV2 approval cancellation", () => {
 });
 
 describe("ClaudeAdapterV2 executable path", () => {
-  it.effect("expands ~ in the configured binary path for the SDK", () =>
+  it.effect("expands ~ in the binary path and opts into task tools for the SDK", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const executablePaths: Array<string | undefined> = [];
+        const todoToolsFlags: Array<string | undefined> = [];
         const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
           {
             instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -1087,6 +1089,7 @@ describe("ClaudeAdapterV2 executable path", () => {
             open: (input) =>
               Effect.sync(() => {
                 executablePaths.push(input.options.pathToClaudeCodeExecutable);
+                todoToolsFlags.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
                 return {
                   messages: Stream.never,
                   offer: () => Effect.void,
@@ -1124,6 +1127,7 @@ describe("ClaudeAdapterV2 executable path", () => {
         );
 
         assert.deepEqual(executablePaths, [path.join(NodeOS.homedir(), "bin", "claude")]);
+        assert.deepEqual(todoToolsFlags, ["1"]);
       }),
     ).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
   );
@@ -3052,6 +3056,174 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         const proposedPlan = [...plans.values()].find((plan) => plan.kind === "proposed_plan");
         assert.equal(proposedPlan?.status, "active");
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    ),
+  );
+
+  it.effect("projects Claude 5 task tools as a todo list", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        const assistantTool = (uuid: string, tool: Record<string, unknown>) =>
+          claudeSdkFrame({
+            type: "assistant",
+            message: {
+              model: "claude-sonnet-5-5",
+              id: `msg_${uuid}`,
+              type: "message",
+              role: "assistant",
+              content: [{ type: "tool_use", ...tool }],
+              stop_reason: "tool_use",
+              stop_sequence: null,
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            },
+            parent_tool_use_id: null,
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          });
+        // Shapes recorded from Claude Code 2.1.285 with CLAUDE_CODE_ENABLE_TODO_TOOLS=1.
+        const toolResult = (
+          uuid: string,
+          toolUseId: string,
+          content: string,
+          toolUseResult: Record<string, unknown>,
+        ) =>
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
+            },
+            parent_tool_use_id: null,
+            tool_use_result: toolUseResult,
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          });
+
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-task-tools-1"),
+            text: "Track the work.",
+            attachments: [],
+          }),
+        );
+        for (const frame of [
+          assistantTool("00000000-0000-4000-8000-000000000601", {
+            id: "tool-task-create-1",
+            name: "TaskCreate",
+            input: { subject: "Inspect", description: "Inspect" },
+          }),
+          toolResult(
+            "00000000-0000-4000-8000-000000000602",
+            "tool-task-create-1",
+            "Task #1 created successfully: Inspect",
+            { task: { id: "1", subject: "Inspect" } },
+          ),
+          assistantTool("00000000-0000-4000-8000-000000000603", {
+            id: "tool-task-create-2",
+            name: "TaskCreate",
+            input: { subject: "Ship", description: "Ship" },
+          }),
+          toolResult(
+            "00000000-0000-4000-8000-000000000604",
+            "tool-task-create-2",
+            "Task #2 created successfully: Ship",
+            { task: { id: "2", subject: "Ship" } },
+          ),
+          assistantTool("00000000-0000-4000-8000-000000000605", {
+            id: "tool-task-update-1",
+            name: "TaskUpdate",
+            input: { taskId: "1", status: "in_progress" },
+          }),
+          toolResult(
+            "00000000-0000-4000-8000-000000000606",
+            "tool-task-update-1",
+            "Updated task #1 status",
+            {
+              success: true,
+              taskId: "1",
+              updatedFields: ["status"],
+              statusChange: { from: "pending", to: "in_progress" },
+            },
+          ),
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000607",
+            result: "Tasks tracked.",
+          }),
+        ]) {
+          yield* Queue.offer(harness.sdkMessages, frame);
+        }
+        yield* Queue.take(harness.terminalReceipts);
+
+        const todoPlans = () =>
+          new Map(
+            harness.events.flatMap((event) =>
+              event.type === "plan.updated" && event.plan.kind === "todo_list"
+                ? [[String(event.plan.id), event.plan]]
+                : [],
+            ),
+          );
+        const stepsOf = (plan: OrchestrationV2PlanArtifact | undefined) =>
+          plan?.kind === "todo_list" ? plan.steps.map((step) => [step.text, step.status]) : [];
+        const [firstTurnPlan] = [...todoPlans().values()];
+        assert.lengthOf([...todoPlans().values()], 1);
+        assert.equal(firstTurnPlan?.status, "active");
+        assert.deepEqual(stepsOf(firstTurnPlan), [
+          ["Inspect", "running"],
+          ["Ship", "pending"],
+        ]);
+
+        // The list outlives the turn: a later turn updates tasks it never created.
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-task-tools-2"),
+            providerTurnOrdinal: 2,
+            text: "Keep going.",
+            attachments: [],
+          }),
+        );
+        for (const frame of [
+          assistantTool("00000000-0000-4000-8000-000000000611", {
+            id: "tool-task-update-2",
+            name: "TaskUpdate",
+            input: { taskId: "1", status: "completed" },
+          }),
+          toolResult(
+            "00000000-0000-4000-8000-000000000612",
+            "tool-task-update-2",
+            "Updated task #1 status",
+            { success: true, taskId: "1", updatedFields: ["status"] },
+          ),
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000613",
+            result: "Inspected.",
+          }),
+        ]) {
+          yield* Queue.offer(harness.sdkMessages, frame);
+        }
+        yield* Queue.take(harness.terminalReceipts);
+
+        const plans = [...todoPlans().values()];
+        assert.deepEqual(
+          plans.map((plan) => plan.status),
+          ["superseded", "active"],
+        );
+        assert.deepEqual(stepsOf(plans[1]), [
+          ["Inspect", "completed"],
+          ["Ship", "pending"],
+        ]);
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     ),
   );
