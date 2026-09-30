@@ -1437,6 +1437,8 @@ async function openRecordingQuery(input: Parameters<typeof query>[0]) {
     ...input,
     options: {
       ...input.options,
+      // Match createClaudeAdapterV2, which opts Claude 5 models into task tools.
+      env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: "1", ...input.options?.env },
       ...(executablePath === undefined ? {} : { pathToClaudeCodeExecutable: executablePath }),
     },
   });
