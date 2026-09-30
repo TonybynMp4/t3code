@@ -1559,7 +1559,11 @@ const CLAUDE_KNOWN_TOOL_CLASSIFICATIONS: Record<
   read: { itemType: "dynamic_tool", requestKind: "file-read" },
   sendmessage: { itemType: "dynamic_tool", requestKind: "command" },
   task: { itemType: "dynamic_tool", requestKind: "command" },
+  taskcreate: { itemType: "dynamic_tool", requestKind: "command" },
+  taskget: { itemType: "dynamic_tool", requestKind: "command" },
+  tasklist: { itemType: "dynamic_tool", requestKind: "command" },
   taskstop: { itemType: "dynamic_tool", requestKind: "command" },
+  taskupdate: { itemType: "dynamic_tool", requestKind: "command" },
   todowrite: { itemType: "dynamic_tool", requestKind: "command" },
   toolsearch: { itemType: "dynamic_tool", requestKind: "command" },
   webfetch: { itemType: "web_search", requestKind: "command" },
@@ -2713,7 +2717,7 @@ function claudeTaskStatus(value: unknown): OrchestrationV2PlanStep["status"] {
  * replace TodoWrite, which Claude 5 no longer offers. Returns whether the
  * list changed.
  */
-export function applyClaudeTaskToolResult(
+function applyClaudeTaskToolResult(
   tasks: Map<string, ClaudeTask>,
   toolName: string,
   input: unknown,
@@ -2757,7 +2761,7 @@ export function applyClaudeTaskToolResult(
   return true;
 }
 
-export function claudeTaskSteps(
+function claudeTaskSteps(
   tasks: ReadonlyMap<string, ClaudeTask>,
 ): ReadonlyArray<OrchestrationV2PlanStep> {
   return [...tasks].map(([id, task]) => ({
