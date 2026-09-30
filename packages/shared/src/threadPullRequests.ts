@@ -4,6 +4,8 @@ import type {
   ThreadLinkedPullRequest,
   ThreadPullRequestKey,
   ThreadPullRequestLink,
+  ThreadPullRequestSnapshot,
+  VcsStatusResult,
 } from "@t3tools/contracts";
 
 import { pullRequestHostOf } from "@t3tools/contracts";
@@ -148,6 +150,44 @@ export function resolveThreadCurrentPullRequestLink(
   const current = resolveThreadCurrentPullRequest(links);
   if (current === null) return null;
   return current.kind === "single" ? current.link : current.top;
+}
+
+/**
+ * `gitStatus` with its open PR backfilled from the thread's links when status discovery missed
+ * one (e.g. a fork branch whose PR is on upstream). Only an open, synced link whose head is the
+ * current ref counts, so switching branches drops it and merged or closed links never apply.
+ * Snapshots carry no head owner: a linked PR from another fork with the same branch name matches
+ * too, which is accepted since it was linked to this thread.
+ */
+export function withBranchPullRequest(
+  gitStatus: VcsStatusResult | null,
+  links: ReadonlyArray<ThreadPullRequestLink>,
+): VcsStatusResult | null {
+  if (gitStatus === null || gitStatus.refName === null || gitStatus.pr?.state === "open") {
+    return gitStatus;
+  }
+  let newest: (ThreadPullRequestLink & { snapshot: ThreadPullRequestSnapshot }) | null = null;
+  for (const link of visibleThreadPullRequests(links)) {
+    const { snapshot } = link;
+    if (snapshot?.state !== "open" || snapshot.headBranch !== gitStatus.refName) continue;
+    if (newest === null || Date.parse(link.linkedAt) > Date.parse(newest.linkedAt)) {
+      newest = { ...link, snapshot };
+    }
+  }
+  if (newest === null) return gitStatus;
+  return {
+    ...gitStatus,
+    pr: {
+      number: newest.number,
+      title: newest.snapshot.title,
+      url: newest.url,
+      baseRef: newest.snapshot.baseBranch,
+      headRef: newest.snapshot.headBranch,
+      state: "open",
+      isDraft: newest.snapshot.isDraft,
+      updatedAt: newest.snapshot.updatedAt,
+    },
+  };
 }
 
 /** Legacy clients can only route links belonging to the thread's own repository. */

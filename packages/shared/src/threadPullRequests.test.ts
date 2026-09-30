@@ -2,6 +2,7 @@ import {
   ProjectId,
   type ThreadPullRequestLink,
   type ThreadPullRequestSnapshot,
+  type VcsStatusResult,
 } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -13,6 +14,7 @@ import {
   resolveThreadPullRequestChains,
   resolveThreadPullRequestBadge,
   threadPullRequestKeysEqual,
+  withBranchPullRequest,
 } from "./threadPullRequests.ts";
 
 // Match Hermes: these ES2023 array methods are absent on mobile, and this module runs in
@@ -473,4 +475,73 @@ it("searches the legacy projection when old environments decode to an empty link
   expect(
     threadPullRequestSearchTerms({ pullRequests: [link(34)], linkedPullRequest }),
   ).not.toContain("#12");
+});
+
+describe("withBranchPullRequest", () => {
+  function status(
+    pr: VcsStatusResult["pr"] = null,
+    refName: string | null = "feature",
+  ): VcsStatusResult {
+    return {
+      isRepo: true,
+      hasPrimaryRemote: true,
+      isDefaultRef: false,
+      refName,
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      hasUpstream: true,
+      aheadCount: 0,
+      behindCount: 0,
+      pr,
+    };
+  }
+
+  it("backfills the newest open link on the current branch", () => {
+    const result = withBranchPullRequest(status(), [
+      link(1, { snapshot: snapshot({ title: "Older" }) }),
+      link(2, { snapshot: snapshot({ headBranch: "other" }) }),
+      link(3, { snapshot: snapshot({ state: "merged" }) }),
+      link(4),
+      link(5, { snapshot: snapshot({ title: "Newer", baseBranch: "dev" }) }),
+      link(6, { snapshot: snapshot(), source: "stack-dismissed" }),
+    ]);
+
+    expect(result?.pr).toEqual({
+      number: 5,
+      title: "Newer",
+      url: "https://github.com/pingdotgg/t3code/pull/5",
+      baseRef: "dev",
+      headRef: "feature",
+      state: "open",
+      isDraft: false,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("ignores links for other branches, terminal links and unsynced links", () => {
+    const links = [
+      link(1, { snapshot: snapshot({ headBranch: "other" }) }),
+      link(2, { snapshot: snapshot({ state: "closed" }) }),
+      link(3),
+    ];
+    const base = status();
+
+    expect(withBranchPullRequest(base, links)).toBe(base);
+    const detached = status(null, null);
+    expect(withBranchPullRequest(detached, [link(4, { snapshot: snapshot() })])).toBe(detached);
+  });
+
+  it("keeps a PR that status already found", () => {
+    const detected = {
+      number: 8,
+      title: "Detected",
+      url: "https://github.com/pingdotgg/t3code/pull/8",
+      baseRef: "main",
+      headRef: "feature",
+      state: "open" as const,
+    };
+    const base = status(detected);
+
+    expect(withBranchPullRequest(base, [link(9, { snapshot: snapshot() })])).toBe(base);
+  });
 });

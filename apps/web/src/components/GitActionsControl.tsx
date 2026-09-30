@@ -103,6 +103,8 @@ import {
   useVcsPullAction,
 } from "~/lib/sourceControlActions";
 import { useThreadShell } from "~/state/entities";
+import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
+import { withBranchPullRequest } from "@t3tools/shared/threadPullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
@@ -1080,7 +1082,16 @@ export default function GitActionsControl({
   // Default to true while loading so we don't flash init controls.
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
-  const gitStatusForActions = gitStatus;
+  const supportsMultiplePullRequests = useSupportsMultiplePullRequests(activeEnvironmentId);
+  const threadPullRequests = supportsMultiplePullRequests
+    ? activeServerThread?.pullRequests
+    : undefined;
+  // Status discovery misses some PRs (a fork branch with its PR on upstream); the thread's
+  // links for this branch fill in so the header offers View rather than a duplicate Create.
+  const gitStatusForActions = useMemo(
+    () => withBranchPullRequest(gitStatus, threadPullRequests ?? []),
+    [gitStatus, threadPullRequests],
+  );
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));

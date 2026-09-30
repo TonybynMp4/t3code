@@ -17,6 +17,7 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { withBranchPullRequest } from "@t3tools/shared/threadPullRequests";
 import * as Option from "effect/Option";
 import {
   CommandId,
@@ -455,6 +456,17 @@ function ThreadRouteContent(
         })
       : null,
   );
+  // Linked PRs on this branch fill in when status discovery misses one (fork branch, PR upstream).
+  const supportsLinkedPrSnapshots =
+    routeEnvironmentRuntime?.serverConfig?.environment.capabilities.threadPullRequests === true;
+  const gitStatusData = useMemo(
+    () =>
+      withBranchPullRequest(
+        gitStatus.data ?? null,
+        supportsLinkedPrSnapshots ? (selectedThread?.pullRequests ?? []) : [],
+      ),
+    [gitStatus.data, selectedThread?.pullRequests, supportsLinkedPrSnapshots],
+  );
   const knownTerminalSessions = useKnownTerminalSessions({
     environmentId: selectedThread?.environmentId ?? null,
     threadId: selectedThread?.id ?? null,
@@ -773,7 +785,7 @@ function ThreadRouteContent(
       fileInspector.supported && selectedThreadCwd !== null ? handleOpenFilesInspector : undefined,
     onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
     currentBranch: selectedThread?.branch ?? null,
-    gitStatus: gitStatus.data,
+    gitStatus: gitStatusData,
     gitOperationLabel: gitState.gitOperationLabel,
     canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
