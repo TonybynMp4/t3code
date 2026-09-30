@@ -13,6 +13,7 @@ import {
   createMessageAttachmentPreviewProjector,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
+  deriveComposerTasksProgress,
   deriveTimelineEntries,
   deriveTimelineEntriesWithState,
   deriveWorkLogEntries,
@@ -329,6 +330,49 @@ describe("deriveActivePlanState", () => {
       }),
     ];
     expect(deriveActivePlanState(activities, TurnId.make("turn-1"))).toBeNull();
+  });
+});
+
+describe("deriveComposerTasksProgress", () => {
+  function planUpdate(turnId: string, plan: Array<{ step: string; status: string }>) {
+    return makeActivity({ kind: "turn.plan.updated", turnId, payload: { plan } });
+  }
+
+  it("keeps an unfinished list from an earlier turn visible", () => {
+    const activities = [
+      planUpdate("turn-1", [
+        { step: "Inspect", status: "completed" },
+        { step: "Ship", status: "pending" },
+      ]),
+    ];
+    expect(
+      deriveComposerTasksProgress(deriveActivePlanState(activities, TurnId.make("turn-2"))),
+    ).toEqual({ step: "Ship", completedSteps: 1, totalSteps: 2 });
+  });
+
+  it("prefers the in-progress step over earlier pending ones", () => {
+    const activities = [
+      planUpdate("turn-1", [
+        { step: "Inspect", status: "pending" },
+        { step: "Ship", status: "inProgress" },
+      ]),
+    ];
+    expect(
+      deriveComposerTasksProgress(deriveActivePlanState(activities, TurnId.make("turn-1")))?.step,
+    ).toBe("Ship");
+  });
+
+  it("hides the list once every step is completed", () => {
+    const activities = [
+      planUpdate("turn-1", [
+        { step: "Inspect", status: "completed" },
+        { step: "Ship", status: "completed" },
+      ]),
+    ];
+    expect(
+      deriveComposerTasksProgress(deriveActivePlanState(activities, TurnId.make("turn-2"))),
+    ).toBeNull();
+    expect(deriveComposerTasksProgress(null)).toBeNull();
   });
 });
 

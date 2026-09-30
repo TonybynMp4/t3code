@@ -350,6 +350,22 @@ export function deriveActivePlanState(
   return addPlanStepDurations(plan, matchingActivities.slice(latestClearIndex + 1));
 }
 
+/**
+ * Progress for the composer tasks drawer. The latest plan stays visible after
+ * its turn ends, and across later turns, until every step is completed.
+ */
+export function deriveComposerTasksProgress(plan: ActivePlanState | null) {
+  const currentStep =
+    plan?.steps.find((step) => step.status === "inProgress") ??
+    plan?.steps.find((step) => step.status === "pending");
+  if (!plan || !currentStep) return null;
+  return {
+    step: currentStep.step,
+    completedSteps: plan.steps.filter((step) => step.status === "completed").length,
+    totalSteps: plan.steps.length,
+  };
+}
+
 export function findLatestProposedPlan(
   proposedPlans: ReadonlyArray<ProposedPlan>,
   latestTurnId: TurnId | string | null | undefined,
