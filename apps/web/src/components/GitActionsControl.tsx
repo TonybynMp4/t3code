@@ -1819,7 +1819,6 @@ export default function GitActionsControl({
                   <Button
                     variant="outline"
                     size="xs"
-                    className="ps-[8.5px]"
                     // The tooltip wrapper replaces data-slot="button", so themed
                     // toolbar styling needs its own hook.
                     data-toolbar-control=""

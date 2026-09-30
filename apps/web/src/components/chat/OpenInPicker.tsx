@@ -357,7 +357,6 @@ export const OpenInPicker = memo(function OpenInPicker({
           render={
             <Button
               aria-label={compact ? "Open file in preferred editor" : undefined}
-              className="ps-[8.5px]"
               size="xs"
               variant="outline"
               // The tooltip wrapper replaces data-slot="button", so themed
