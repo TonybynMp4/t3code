@@ -50,7 +50,11 @@ import {
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  applyClaudeTaskToolResult,
+  makeClaudeAdapter,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -8364,6 +8368,44 @@ describe("ClaudeAdapterLive", () => {
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
+    );
+  });
+});
+
+describe("applyClaudeTaskToolResult", () => {
+  const taskList = () => new Map() as Parameters<typeof applyClaudeTaskToolResult>[0];
+  const create = (tasks: ReturnType<typeof taskList>, id: string, subject: string) =>
+    applyClaudeTaskToolResult(
+      tasks,
+      { toolName: "TaskCreate", input: { subject } },
+      { task: { id, subject } },
+    );
+
+  it("removes tasks that TaskUpdate deletes", () => {
+    const tasks = taskList();
+    create(tasks, "1", "Inspect");
+    create(tasks, "2", "Ship");
+
+    assert.isTrue(
+      applyClaudeTaskToolResult(
+        tasks,
+        { toolName: "TaskUpdate", input: { taskId: "2", status: "deleted" } },
+        { success: true, taskId: "2" },
+      ),
+    );
+    assert.deepEqual([...tasks.keys()], ["1"]);
+  });
+
+  it("reports a change when TaskList empties the list", () => {
+    const tasks = taskList();
+    create(tasks, "1", "Inspect");
+
+    assert.isTrue(
+      applyClaudeTaskToolResult(tasks, { toolName: "TaskList", input: {} }, { tasks: [] }),
+    );
+    assert.equal(tasks.size, 0);
+    assert.isFalse(
+      applyClaudeTaskToolResult(tasks, { toolName: "TaskList", input: {} }, { tasks: [] }),
     );
   });
 });

@@ -1172,9 +1172,9 @@ function readClaudeTaskFromResult(
     : undefined;
 }
 
-function applyClaudeTaskToolResult(
+export function applyClaudeTaskToolResult(
   tasks: Map<string, ClaudeTaskState>,
-  tool: ToolInFlight,
+  tool: Pick<ToolInFlight, "toolName" | "input">,
   result: Record<string, unknown> | undefined,
 ): boolean {
   if (!isClaudeTaskTool(tool.toolName)) {
@@ -1187,6 +1187,7 @@ function applyClaudeTaskToolResult(
     if (!Array.isArray(resultTasks)) {
       return false;
     }
+    const hadTasks = tasks.size > 0;
     tasks.clear();
     for (const entry of resultTasks) {
       if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
@@ -1205,7 +1206,7 @@ function applyClaudeTaskToolResult(
         blockedBy: new Set(readStringArray(task.blockedBy)),
       });
     }
-    return tasks.size > 0;
+    return hadTasks || tasks.size > 0;
   }
 
   if (tool.toolName === "TaskCreate") {
@@ -1227,6 +1228,9 @@ function applyClaudeTaskToolResult(
   const taskId = readString(tool.input.taskId) ?? readString(result?.taskId);
   if (!taskId) {
     return false;
+  }
+  if (tool.input.status === "deleted") {
+    return tasks.delete(taskId);
   }
   const task = tasks.get(taskId);
   if (!task) {
@@ -2632,11 +2636,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       readonly rawPayload: unknown;
     },
   ) {
+    // An empty plan is sent on purpose: it clears the list once every task is deleted.
     const plan = planStepsFromClaudeTasks(context.claudeTasks);
-    if (plan.length === 0) {
-      return;
-    }
-
     const stamp = yield* makeEventStamp();
     yield* offerRuntimeEvent({
       type: "turn.plan.updated",
