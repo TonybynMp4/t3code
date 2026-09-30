@@ -255,6 +255,22 @@ export function deriveActivePlanState(
   };
 }
 
+/**
+ * Progress for the composer tasks tab. An unfinished list stays visible after
+ * its run ends, until the agent completes or clears it.
+ */
+export function deriveComposerTasksProgress(plan: ActivePlanState | null) {
+  const currentStep =
+    plan?.steps.find((step) => step.status === "inProgress") ??
+    plan?.steps.find((step) => step.status === "pending");
+  if (!plan || !currentStep) return null;
+  return {
+    step: currentStep.step,
+    completedSteps: plan.steps.filter((step) => step.status === "completed").length,
+    totalSteps: plan.steps.length,
+  };
+}
+
 function planItemTime(projection: OrchestrationV2ThreadProjection, planId: PlanId): string {
   const item = projection.turnItems.findLast(
     (candidate) =>

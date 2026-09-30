@@ -25,6 +25,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   deriveActivePlanState,
   deriveCanInterruptRunningThread,
+  deriveComposerTasksProgress,
   deriveTimelineEntriesFromVisibleTurnItems,
   deriveTimelineEntriesFromVisibleTurnItemsWithState,
   deriveRevertTurnCountByUserMessageId,
@@ -540,6 +541,43 @@ describe("V2 session presentation", () => {
       { step: "Verify", status: "completed", durationMs: 4_000 },
       { step: "Report", status: "pending" },
     ]);
+  });
+
+  it("keeps an unfinished task list in the composer after its run", () => {
+    const projection = makeThreadProjectionFixture();
+    const plan = (
+      steps: ReadonlyArray<{ text: string; status: "pending" | "running" | "completed" }>,
+    ) => ({
+      id: PlanId.make("plan-composer-tasks"),
+      threadId: projection.thread.id,
+      runId: RunId.make("run-1"),
+      nodeId: NodeId.make("node-composer-tasks"),
+      kind: "todo_list" as const,
+      status: "active" as const,
+      steps: steps.map((step, index) => ({ id: `step-${index}`, ...step })),
+    });
+    const laterRun = RunId.make("run-2");
+
+    const unfinished = plan([
+      { text: "Inspect", status: "completed" },
+      { text: "Test", status: "pending" },
+      { text: "Ship", status: "running" },
+    ]);
+    expect(
+      deriveComposerTasksProgress(
+        deriveActivePlanState({ ...projection, plans: [unfinished] }, laterRun),
+      ),
+    ).toEqual({ step: "Ship", completedSteps: 1, totalSteps: 3 });
+
+    const finished = plan([
+      { text: "Inspect", status: "completed" },
+      { text: "Ship", status: "completed" },
+    ]);
+    expect(
+      deriveComposerTasksProgress(
+        deriveActivePlanState({ ...projection, plans: [finished] }, laterRun),
+      ),
+    ).toBeNull();
   });
 
   it("keeps failed tool items tool-toned so groups still summarize", () => {
