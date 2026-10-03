@@ -8,7 +8,8 @@ import {
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
 } from "@t3tools/shared/threadPullRequests";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { threadIssueKeyOf, threadIssuesOf } from "@t3tools/shared/threadIssues";
+import { EnvironmentId, ThreadId, type ThreadIssueLink } from "@t3tools/contracts";
 import {
   CommonActions,
   StackActions,
@@ -40,6 +41,8 @@ import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-worktree";
+import { threadEnvironment } from "../../../state/threads";
+import { useAtomCommand } from "../../../state/use-atom-command";
 import { vcsEnvironment } from "../../../state/vcs";
 import { resolveGitOverviewReviewNavigationAction } from "./git-overview-navigation";
 import { MetaCard, SheetListRow, menuItemIconName, statusSummary } from "./gitSheetComponents";
@@ -72,6 +75,39 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         supportsLinkedPrSnapshots ? (selectedThread?.pullRequests ?? []) : [],
       ),
     [selectedThread?.pullRequests, supportsLinkedPrSnapshots],
+  );
+  const linkedIssues =
+    selectedEnvironmentRuntime?.serverConfig?.environment.capabilities.threadIssues === true &&
+    selectedThread !== null
+      ? threadIssuesOf(selectedThread)
+      : [];
+  const unlinkIssue = useAtomCommand(threadEnvironment.unlinkIssue);
+  // Linking happens on desktop or by the agent; here an issue opens or comes off the thread.
+  const onPressIssue = useCallback(
+    (link: ThreadIssueLink) => {
+      Alert.alert(link.displayKey, link.snapshot?.title, [
+        {
+          text: "Open",
+          onPress: () => {
+            void tryOpenExternalUrl(link.url, "issue").then((opened) => {
+              if (!opened) Alert.alert("Unable to open issue", "The issue could not be opened.");
+            });
+          },
+        },
+        {
+          text: "Unlink from thread",
+          style: "destructive",
+          onPress: () => {
+            void unlinkIssue({
+              environmentId,
+              input: { threadId, tracker: link.tracker, host: link.host, id: link.id },
+            });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [environmentId, threadId, unlinkIssue],
   );
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -351,6 +387,31 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
               ))}
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {linkedIssues.length > 0 ? (
+        <View className="gap-2">
+          <Text className="px-1 text-xs font-t3-bold text-foreground-muted">Linked issues</Text>
+          <View className="overflow-hidden bg-card android:rounded-[20px] ios:rounded-2xl ios:border ios:border-border ios:px-3 ios:py-1">
+            {linkedIssues.map((link, index) => (
+              <View key={threadIssueKeyOf(link)}>
+                {index > 0 && Platform.OS !== "android" ? (
+                  <View className="ml-12 h-px bg-border" />
+                ) : null}
+                <SheetListRow
+                  icon={
+                    link.snapshot?.state === "closed"
+                      ? "checkmark.circle"
+                      : "exclamationmark.circle"
+                  }
+                  title={link.snapshot?.title ?? link.displayKey}
+                  subtitle={`${link.displayKey} · ${link.snapshot?.state ?? "Status pending"}`}
+                  onPress={() => onPressIssue(link)}
+                />
+              </View>
+            ))}
+          </View>
         </View>
       ) : null}
 

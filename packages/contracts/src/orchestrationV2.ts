@@ -49,6 +49,12 @@ import {
   ThreadPullRequestWatch,
 } from "./threadPullRequest.ts";
 import {
+  ThreadIssueKey,
+  ThreadIssueLink,
+  ThreadIssueLinkSource,
+  ThreadIssueSnapshot,
+} from "./threadIssue.ts";
+import {
   ProviderApprovalDecision,
   ProviderApprovalOption,
   ProviderInteractionMode,
@@ -369,6 +375,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
       pre-linking servers still decode. */
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
+  /** Issues linked to this thread; optional so servers without issue links still decode. */
+  issues: Schema.optional(Schema.Array(ThreadIssueLink)),
   /** Pull request discovered from the thread's current branch. */
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
@@ -1696,6 +1704,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   /** Pull request the user linked to this thread (#8160). */
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
+  /** Issues linked to this thread; optional so servers without issue links still decode. */
+  issues: Schema.optional(Schema.Array(ThreadIssueLink)),
   /** Pull request discovered from the thread's current branch. */
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   lineage: OrchestrationV2AppThreadLineage,
@@ -2614,6 +2624,21 @@ export const OrchestrationV2Command = Schema.Union([
     ),
   }),
   Schema.Struct({
+    type: Schema.Literal("thread.issue.link"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadIssueKey.fields,
+    displayKey: TrimmedNonEmptyString,
+    url: TrimmedNonEmptyString,
+    source: ThreadIssueLinkSource,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.issue.unlink"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadIssueKey.fields,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread.pull-request.sync"),
     commandId: CommandId,
     threadId: ThreadId,
@@ -2913,6 +2938,14 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     providerThreadId: ProviderThreadId,
     providerTurnId: ProviderTurnId,
+  }),
+  /** Writes the tracker state the issue sync reactor read onto a linked issue. */
+  Schema.Struct({
+    type: Schema.Literal("thread.issue-link.sync"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadIssueKey.fields,
+    snapshot: ThreadIssueSnapshot,
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

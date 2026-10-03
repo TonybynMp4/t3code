@@ -5,6 +5,11 @@ import {
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { threadPullRequestsOf } from "@t3tools/shared/threadPullRequests";
 import {
+  normalizeThreadIssueKey,
+  threadIssueKeysEqual,
+  threadIssuesOf,
+} from "@t3tools/shared/threadIssues";
+import {
   normalizeThreadPullRequestKey,
   visibleThreadPullRequests,
   threadPullRequestKeysEqual,
@@ -376,6 +381,9 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.pull-request.watch":
     case "thread.pull-request-watch.sync":
     case "thread.pull-request.sync":
+    case "thread.issue.link":
+    case "thread.issue.unlink":
+    case "thread.issue-link.sync":
     case "thread.title.regeneration.complete":
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
@@ -2302,6 +2310,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.pull-request.watch"
           | "thread.pull-request-watch.sync"
           | "thread.pull-request.sync"
+          | "thread.issue.link"
+          | "thread.issue.unlink"
+          | "thread.issue-link.sync"
           | "thread.title.regeneration.complete"
           | "thread.runtime-mode.set"
           | "thread.interaction-mode.set"
@@ -2983,6 +2994,42 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: command.type === "thread.pull-request.watch" ? now : thread.updatedAt,
           };
         }
+        case "thread.issue.link":
+        case "thread.issue.unlink":
+        case "thread.issue-link.sync": {
+          const key = normalizeThreadIssueKey(command);
+          const links = threadIssuesOf(thread);
+          const existing = links.find((link) => threadIssueKeysEqual(link, key));
+          let issues = links;
+          if (command.type === "thread.issue.link") {
+            if (existing) return thread;
+            issues = [
+              ...links,
+              {
+                ...key,
+                displayKey: command.displayKey,
+                url: command.url,
+                source: command.source,
+                linkedAt: DateTime.formatIso(now),
+                snapshot: null,
+              },
+            ];
+          } else if (command.type === "thread.issue.unlink") {
+            if (!existing) return thread;
+            issues = links.filter((link) => link !== existing);
+          } else {
+            if (!existing) return thread;
+            issues = links.map((link) =>
+              link === existing ? { ...link, snapshot: command.snapshot } : link,
+            );
+          }
+          return {
+            ...thread,
+            issues,
+            // A sync is the tracker's news, not activity on the thread.
+            updatedAt: command.type === "thread.issue-link.sync" ? thread.updatedAt : now,
+          };
+        }
         case "thread.pull-request.sync":
           return {
             ...thread,
@@ -3067,6 +3114,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return "thread.marked-unread" as const;
         case "thread.metadata.update":
         case "thread.title.regeneration.complete":
+        // Issue links ride the metadata event so clients that predate them decode it and drop
+        // the field they do not know, instead of failing on a new event type.
+        case "thread.issue.link":
+        case "thread.issue.unlink":
+        case "thread.issue-link.sync":
           return "thread.metadata-updated" as const;
         case "thread.pull-request.link":
         case "thread.pull-request.unlink":
@@ -9278,6 +9330,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.pull-request-link.sync":
       case "thread.pull-request.watch":
       case "thread.pull-request.sync":
+      case "thread.issue.link":
+      case "thread.issue.unlink":
+      case "thread.issue-link.sync":
       case "thread.title.regeneration.complete":
       case "thread.runtime-mode.set":
       case "thread.interaction-mode.set":

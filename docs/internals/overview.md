@@ -37,6 +37,14 @@ omit `pullRequests`. Retain the legacy wire fields, projection column, and repla
 does not schedule their removal. Missing new capabilities must also override cached multi-link data
 after an environment downgrade.
 
+### Issue linking compatibility
+
+Issue links follow the same rule behind `threadIssues: true`. They live in their own optional
+`issues[]` on the thread, not in `pullRequests[]`, and their commands emit the existing
+`thread.metadata-updated` event, so an older client decodes a newer environment's events and only
+misses the field. `tracker` is an open string rather than a closed union, so adding a tracker such
+as Jira later does not break decoding on clients that cannot show it.
+
 Provider-specific behavior belongs behind an adapter. Orchestration works with normalized commands
 and events, so adding a provider should not require branches throughout the domain or clients.
 See [provider constraints](./providers.md).
