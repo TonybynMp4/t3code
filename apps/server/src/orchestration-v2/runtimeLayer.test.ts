@@ -2153,6 +2153,76 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("links, syncs, and unlinks issues through rebuilds", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const threadId = ThreadId.make("runtime-issues");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("issue-create"),
+        threadId,
+        projectId: ProjectId.make("issue-project"),
+        title: "Issues",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { tracker: "github", host: "GitHub.com", id: "Pingdotgg/T3code#7" };
+      for (const index of [0, 1]) {
+        yield* orchestrator.dispatch({
+          type: "thread.issue.link",
+          commandId: CommandId.make(`issue-link-${index}`),
+          threadId,
+          ...key,
+          displayKey: "pingdotgg/t3code#7",
+          url: "https://github.com/pingdotgg/t3code/issues/7",
+          source: "manual",
+        });
+      }
+      const linked = yield* orchestrator.getThreadShell(threadId);
+      assert.deepEqual(
+        linked?.issues?.map(({ tracker, host, id, snapshot }) => ({ tracker, host, id, snapshot })),
+        [{ tracker: "github", host: "github.com", id: "pingdotgg/t3code#7", snapshot: null }],
+      );
+
+      const snapshot = {
+        state: "closed" as const,
+        title: "Crash on start",
+        author: null,
+        labels: [{ name: "bug", color: "d73a4a" }],
+        updatedAt: "2026-09-18T00:00:00.000Z",
+        closedAt: "2026-09-18T00:00:00.000Z",
+        syncedAt: "2026-09-18T00:01:00.000Z",
+      };
+      yield* orchestrator.dispatch({
+        type: "thread.issue-link.sync",
+        commandId: CommandId.make("issue-sync"),
+        threadId,
+        ...key,
+        snapshot,
+      });
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      const synced = yield* orchestrator.getThreadShell(threadId);
+      assert.deepEqual(synced?.issues?.[0]?.snapshot, snapshot);
+      // A sync is not activity: the thread does not jump to the top of the list.
+      assert.deepEqual(synced?.updatedAt, linked?.updatedAt);
+
+      yield* orchestrator.dispatch({
+        type: "thread.issue.unlink",
+        commandId: CommandId.make("issue-unlink"),
+        threadId,
+        ...key,
+      });
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      assert.isUndefined((yield* orchestrator.getThreadShell(threadId))?.issues);
+    }),
+  );
+
   it.effect("starts, records, and stops a pull request watch", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

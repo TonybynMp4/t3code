@@ -191,6 +191,18 @@ after 10 wakes in a row that bring only comments, or when the server cannot read
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
 
+## Linked issues
+
+A thread can link GitHub and GitLab issues. Use **Link issue to thread** in the command palette or
+the **Issues** panel, and paste an issue URL, `owner/repo#42`, or `#42` for an issue in the
+project's own repository. Select a linked issue to read its description and comments without leaving
+the app. Unlink an issue from its row menu.
+
+Agents can link, unlink, and read issues with the `link_issue`, `unlink_issue`, `list_linked_issues`,
+and `read_issue` tools. `read_issue` works for any issue the environment's `gh` or `glab` login can
+see, linked or not. Titles and states refresh on the server in the background. On mobile, the Git
+overview lists linked issues; tap one to open or unlink it.
+
 ## GitHub stacks
 
 The Pull Requests page shows each PR's position in its GitHub stack. Open the stack badge in a

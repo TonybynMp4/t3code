@@ -18,7 +18,7 @@ export interface ChangeRequestLink {
 }
 
 /** The host itself, one of its subdomains, or an install named after the provider. */
-function isHostOf(hostname: string, apex: string, label?: string): boolean {
+export function isHostOf(hostname: string, apex: string, label?: string): boolean {
   if (hostname === apex || hostname.endsWith(`.${apex}`)) return true;
   return label !== undefined && hostname.split(".").includes(label);
 }
