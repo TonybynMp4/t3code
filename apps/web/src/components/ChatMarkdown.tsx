@@ -975,6 +975,7 @@ function MarkdownCodeBlock({
   theme,
   onRunShellCommand,
   isStreaming,
+  action,
   children,
 }: {
   code: string;
@@ -983,6 +984,7 @@ function MarkdownCodeBlock({
   theme: "light" | "dark";
   onRunShellCommand?: ((command: string) => void) | undefined;
   isStreaming: boolean;
+  action: ReactNode;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -1055,6 +1057,7 @@ function MarkdownCodeBlock({
           />
         </span>
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
+          {action}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -2794,6 +2797,14 @@ function useChatMarkdownState({
   };
 }
 
+/**
+ * Lets the surface around a message add one action to a fenced block's header, keyed by the
+ * fence's meta string. Return null to leave a block alone.
+ */
+export const MarkdownCodeBlockActionContext = React.createContext<
+  ((meta: string | undefined) => ReactNode) | null
+>(null);
+
 const ChatMarkdownRendererContext = React.createContext<
   ReturnType<typeof useChatMarkdownState>["componentState"]
 >(null!);
@@ -3303,13 +3314,15 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const { resolvedTheme, diffThemeName, isStreaming, onRunShellCommand, text } = use(
       ChatMarkdownRendererContext,
     );
+    const renderAction = use(MarkdownCodeBlockActionContext);
     const codeBlock = extractCodeBlock(children);
     if (!codeBlock) {
       return <pre {...props}>{children}</pre>;
     }
 
     const language = extractFenceLanguage(codeBlock.className);
-    const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
+    const meta = extractPreCodeMeta(node);
+    const fenceTitle = extractFenceTitle(meta);
     return (
       <MarkdownCodeBlock
         code={codeBlock.code}
@@ -3322,6 +3335,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             : undefined
         }
         isStreaming={isStreaming}
+        action={renderAction?.(meta) ?? null}
       >
         <RenderErrorBoundary
           resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
