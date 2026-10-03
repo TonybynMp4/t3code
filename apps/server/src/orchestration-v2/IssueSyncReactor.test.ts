@@ -1,5 +1,6 @@
 import {
   IssueReadError,
+  IssueUnavailableError,
   ProjectId,
   ThreadId,
   type IssueDetail,
@@ -8,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,7 +26,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 type SyncCommand = Extract<
   OrchestrationV2ServerCommand,
-  { readonly type: "thread.issue-link.sync" }
+  { readonly type: "thread.issue-link.sync" | "thread.issue-link.sync-failed" }
 >;
 
 const PROJECT_ID = ProjectId.make("project-1");
@@ -59,6 +61,7 @@ const detail: IssueDetail = {
 
 const makeHarness = Effect.fn("makeIssueSyncHarness")(function* (
   getIssue: IssueService.IssueService["Service"]["getIssue"],
+  options: { readonly settledAt?: DateTime.Utc } = {},
 ) {
   const activation = yield* Deferred.make<void>();
   const reads = yield* Queue.unbounded<void>();
@@ -68,6 +71,8 @@ const makeHarness = Effect.fn("makeIssueSyncHarness")(function* (
     ["thread-a", "thread-b"].map((id) => ({
       id: ThreadId.make(id),
       projectId: PROJECT_ID,
+      settledOverride: null,
+      settledAt: options.settledAt ?? null,
       issues: [link],
     })),
   );
@@ -83,15 +88,23 @@ const makeHarness = Effect.fn("makeIssueSyncHarness")(function* (
     }),
     Layer.mock(Orchestrator.OrchestratorV2)({
       dispatch: (command) =>
-        command.type === "thread.issue-link.sync"
+        command.type === "thread.issue-link.sync" ||
+        command.type === "thread.issue-link.sync-failed"
           ? Effect.gen(function* () {
               yield* Ref.update(commands, (recorded) => [...recorded, command]);
               // What the orchestrator would persist, so the next sweep sees its own writes.
               yield* Ref.update(threads, (current) =>
                 current.map((thread) =>
-                  thread.id === command.threadId
-                    ? { ...thread, issues: [{ ...link, snapshot: command.snapshot }] }
-                    : thread,
+                  thread.id !== command.threadId
+                    ? thread
+                    : {
+                        ...thread,
+                        issues: thread.issues.map((existing) =>
+                          command.type === "thread.issue-link.sync"
+                            ? { ...link, snapshot: command.snapshot }
+                            : { ...existing, syncError: command.error },
+                        ),
+                      },
                 ),
               );
               return { sequence: 1, storedEvents: [] };
@@ -144,7 +157,10 @@ describe("IssueSyncReactor", () => {
         assert.equal(yield* Ref.get(harness.issueReads), 1);
         const synced = yield* Ref.get(harness.commands);
         assert.deepEqual(
-          synced.map((command) => [command.threadId, command.snapshot.title]),
+          synced.map((command) => [
+            command.threadId,
+            command.type === "thread.issue-link.sync" ? command.snapshot.title : null,
+          ]),
           [
             ["thread-a", "Crash on start"],
             ["thread-b", "Crash on start"],
@@ -161,12 +177,55 @@ describe("IssueSyncReactor", () => {
     }),
   );
 
-  it.effect("backs off from an issue it cannot read", () =>
+  it.effect("polls open issues slowly once every thread linking them has settled", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(() => Effect.succeed(detail), {
+        settledAt: DateTime.makeUnsafe("2026-09-03T00:00:00.000Z"),
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* harness.start;
+        yield* harness.sweepAfter(reactor, 29);
+        assert.equal(yield* Ref.get(harness.issueReads), 1);
+        yield* harness.sweepAfter(reactor, 1);
+        assert.equal(yield* Ref.get(harness.issueReads), 2);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("records why an issue cannot be read, and backs off from it", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness(() => Effect.fail(new IssueReadError({ detail: "gone" })));
       yield* Effect.gen(function* () {
         const reactor = yield* harness.start;
-        yield* harness.sweepAfter(reactor, 4);
+        assert.deepEqual(
+          (yield* Ref.get(harness.commands)).map((command) => [
+            command.type,
+            command.threadId,
+            command.type === "thread.issue-link.sync-failed" ? command.error : null,
+          ]),
+          [
+            ["thread.issue-link.sync-failed", "thread-a", "gone"],
+            ["thread.issue-link.sync-failed", "thread-b", "gone"],
+          ],
+        );
+        yield* harness.sweepAfter(reactor, 29);
+        assert.equal(yield* Ref.get(harness.issueReads), 1);
+        yield* harness.sweepAfter(reactor, 1);
+        assert.equal(yield* Ref.get(harness.issueReads), 2);
+        // The same reason is not written again.
+        assert.equal((yield* Ref.get(harness.commands)).length, 2);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("leaves a rate-limited host alone for a while", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(() =>
+        Effect.fail(new IssueUnavailableError({ reason: "rate-limited", tracker: "github" })),
+      );
+      yield* Effect.gen(function* () {
+        const reactor = yield* harness.start;
+        yield* harness.sweepAfter(reactor, 14);
         assert.equal(yield* Ref.get(harness.issueReads), 1);
         yield* harness.sweepAfter(reactor, 1);
         assert.equal(yield* Ref.get(harness.issueReads), 2);

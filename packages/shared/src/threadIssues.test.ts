@@ -58,6 +58,12 @@ describe("issue keys", () => {
     expect(parseGitIssueId("PROJ-12")).toBeNull();
   });
 
+  it("refuses repository paths that could reshape a tracker API request", () => {
+    for (const id of ["a/b?x=1#1", "../..#1", "a/..#1", "repo#1", "a/b c#1", "a//b#1"]) {
+      expect(parseGitIssueId(id)).toBeNull();
+    }
+  });
+
   it("compares case-insensitively and keeps trackers apart", () => {
     const key = { tracker: "github", host: "github.com", id: "a/b#1" };
     expect(threadIssueKeysEqual(key, { ...key, host: "GitHub.com", id: "A/B#1" })).toBe(true);

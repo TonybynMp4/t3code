@@ -44,12 +44,28 @@ export function gitIssueLink(
   };
 }
 
+/**
+ * Whether a repository path is plain `owner/repo` (or a GitLab `group/sub/repo`): segments of
+ * letters, digits, `.`, `_` and `-`, none of them dots only. The path goes into tracker API
+ * endpoints, so anything that could reshape the request is refused.
+ */
+function isGitIssueRepository(repository: string): boolean {
+  const segments = repository.split("/");
+  return (
+    segments.length >= 2 &&
+    segments.every((segment) => /^[\w.-]+$/u.test(segment) && !/^\.+$/u.test(segment))
+  );
+}
+
 /** The repository and number inside a git host issue id, or null for any other id. */
 export function parseGitIssueId(id: string): { repository: string; number: number } | null {
   const match = /^(.+)#([1-9]\d*)$/u.exec(id.trim());
   if (!match?.[1] || !match[2]) return null;
   const number = Number(match[2]);
-  return Number.isSafeInteger(number) ? { repository: match[1].toLowerCase(), number } : null;
+  const repository = match[1].toLowerCase();
+  return Number.isSafeInteger(number) && isGitIssueRepository(repository)
+    ? { repository, number }
+    : null;
 }
 
 /**
@@ -72,13 +88,17 @@ export function parseIssueUrl(targetUrl: string): GitIssueLink | null {
 
   if (isHostOf(host, "github.com", "github")) {
     const match = /^\/([^/]+\/[^/]+)\/issues\/([1-9]\d*)(?:\/|$)/u.exec(url.pathname);
-    if (match?.[1] && match[2]) return gitIssueLink("github", host, match[1], Number(match[2]));
+    if (match?.[1] && match[2] && isGitIssueRepository(match[1])) {
+      return gitIssueLink("github", host, match[1], Number(match[2]));
+    }
   }
   // GitLab, self-hosted included. Newer GitLab also serves issues as work items.
   const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/(?:issues|work_items)\/([1-9]\d*)(?:\/|$)/u.exec(
     url.pathname,
   );
-  if (gitlab?.[1] && gitlab[2]) return gitIssueLink("gitlab", host, gitlab[1], Number(gitlab[2]));
+  if (gitlab?.[1] && gitlab[2] && isGitIssueRepository(gitlab[1])) {
+    return gitIssueLink("gitlab", host, gitlab[1], Number(gitlab[2]));
+  }
   return null;
 }
 

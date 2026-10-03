@@ -200,8 +200,10 @@ the app. Unlink an issue from its row menu.
 
 Agents can link, unlink, and read issues with the `link_issue`, `unlink_issue`, `list_linked_issues`,
 and `read_issue` tools. `read_issue` works for any issue the environment's `gh` or `glab` login can
-see, linked or not. Titles and states refresh on the server in the background. On mobile, the Git
-overview lists linked issues; tap one to open or unlink it.
+see, linked or not. Issues on github.com and gitlab.com work from any project; issues on a
+self-hosted GitHub or GitLab need a project whose remote is on that server. Titles and states
+refresh on the server in the background, and a linked issue that can no longer be read shows why.
+On mobile, the Git overview lists linked issues; tap one to open or unlink it.
 
 ## GitHub stacks
 

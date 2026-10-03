@@ -2,6 +2,7 @@ import type {
   IssueRef,
   ProjectId,
   ScopedThreadRef,
+  ThreadIssueClosedReason,
   ThreadIssueLink,
   ThreadIssueState,
 } from "@t3tools/contracts";
@@ -14,8 +15,10 @@ import {
 import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
+  CircleAlertIcon,
   CircleCheckIcon,
   CircleDotIcon,
+  CircleSlashIcon,
   LinkIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -25,7 +28,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useOpenLink } from "~/browser/useOpenLink";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
-import { issueComments, issueDetail } from "~/state/issues";
+import { issueEnvironment } from "~/state/issues";
 import { useProject, useServerConfigs, useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { threadEnvironment } from "~/state/threads";
@@ -53,7 +56,13 @@ const SOURCE_LABELS: Record<ThreadIssueLink["source"], string> = {
   agent: "Linked by the agent",
 };
 
-function IssueStateGlyph({ state }: { state: ThreadIssueState | null }) {
+function IssueStateGlyph({
+  state,
+  closedReason,
+}: {
+  state: ThreadIssueState | null;
+  closedReason?: ThreadIssueClosedReason | undefined;
+}) {
   if (state === null) {
     return (
       <CircleDotIcon
@@ -62,13 +71,27 @@ function IssueStateGlyph({ state }: { state: ThreadIssueState | null }) {
       />
     );
   }
-  // A closed issue reads like a merged pull request: done, not abandoned.
-  const presentation = PULL_REQUEST_STATE_PRESENTATION[state === "open" ? "open" : "merged"];
-  const Icon = state === "open" ? CircleDotIcon : CircleCheckIcon;
+  if (state === "open") {
+    return (
+      <CircleDotIcon
+        aria-label="Open"
+        className={cn("size-4 shrink-0", PULL_REQUEST_STATE_PRESENTATION.open.toneClassName)}
+      />
+    );
+  }
+  // Closed as done reads like a merged pull request; closed as not planned is greyed out.
+  if (closedReason === "not-planned") {
+    return (
+      <CircleSlashIcon
+        aria-label="Closed as not planned"
+        className={cn("size-4 shrink-0", PULL_REQUEST_STATE_PRESENTATION.draft.toneClassName)}
+      />
+    );
+  }
   return (
-    <Icon
-      aria-label={state === "open" ? "Open" : "Closed"}
-      className={cn("size-4 shrink-0", presentation.toneClassName)}
+    <CircleCheckIcon
+      aria-label="Closed"
+      className={cn("size-4 shrink-0", PULL_REQUEST_STATE_PRESENTATION.merged.toneClassName)}
     />
   );
 }
@@ -86,9 +109,18 @@ function IssueRow({
 }) {
   const openLink = useOpenLink(threadRef);
   const snapshot = link.snapshot;
+  // Never read: say why rather than looking pending. Read before: keep the last state shown.
+  const unreadable = snapshot === null && link.syncError !== undefined;
   return (
     <div className={cn(PULL_REQUEST_ROW_CLASS, "relative px-2 hover:bg-accent/60")}>
-      <IssueStateGlyph state={snapshot?.state ?? null} />
+      {unreadable ? (
+        <CircleAlertIcon
+          aria-label="Could not read the issue"
+          className="size-4 shrink-0 text-destructive"
+        />
+      ) : (
+        <IssueStateGlyph state={snapshot?.state ?? null} closedReason={snapshot?.closedReason} />
+      )}
       <button type="button" onClick={() => onSelect(link)} className="flex min-w-0 flex-1">
         <PullRequestRowLines
           number={
@@ -98,10 +130,19 @@ function IssueRow({
               </TooltipTrigger>
               <TooltipPopup>
                 {SOURCE_LABELS[link.source]} · {formatRelativeTimeLabel(link.linkedAt)}
+                {link.syncError === undefined ? null : (
+                  <>
+                    <br />
+                    Last refresh failed: {link.syncError}
+                  </>
+                )}
               </TooltipPopup>
             </Tooltip>
           }
-          title={snapshot?.title ?? link.host}
+          title={
+            snapshot?.title ??
+            (link.syncError === undefined ? link.host : `Could not read: ${link.syncError}`)
+          }
           meta={
             snapshot?.author ? (
               <PullRequestRowAuthor
@@ -164,7 +205,7 @@ function IssueDetailView({
     [link.host, link.id, link.tracker, projectId],
   );
   const detail = useEnvironmentQuery(
-    issueDetail({ environmentId: threadRef.environmentId, input: ref }),
+    issueEnvironment.detail({ environmentId: threadRef.environmentId, input: ref }),
   );
   const issue = detail.data;
   const cwd = project?.workspaceRoot ?? null;
@@ -203,7 +244,7 @@ function IssueDetailView({
           ) : (
             <>
               <div className="flex items-start gap-2">
-                <IssueStateGlyph state={issue.state} />
+                <IssueStateGlyph state={issue.state} closedReason={issue.closedReason} />
                 <h2 className="min-w-0 text-sm font-medium">{issue.title}</h2>
               </div>
               <div className="flex flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
@@ -263,7 +304,7 @@ function IssueCommentsPage({
   onMore: (nextCursor: string) => void;
 }) {
   const page = useEnvironmentQuery(
-    issueComments({
+    issueEnvironment.comments({
       environmentId: threadRef.environmentId,
       input: {
         ...issueRef,
@@ -372,7 +413,7 @@ function EnabledThreadIssuesPanel({ threadRef }: { threadRef: ScopedThreadRef })
     );
   }
 
-  const openCount = links.filter((link) => link.snapshot?.state !== "closed").length;
+  const openCount = links.filter((link) => link.snapshot?.state === "open").length;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">

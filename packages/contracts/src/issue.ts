@@ -5,10 +5,11 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { PullRequestActor, PullRequestLabel } from "./pullRequest.ts";
-import { ThreadIssueKey, ThreadIssueState } from "./threadIssue.ts";
+import { ThreadIssueClosedReason, ThreadIssueKey, ThreadIssueState } from "./threadIssue.ts";
 
 /**
  * An issue to read. `projectId` picks the environment-local project whose credentials and remote
@@ -32,6 +33,7 @@ export const IssueDetail = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: Schema.NullOr(IsoDateTime),
   closedAt: Schema.NullOr(IsoDateTime),
+  closedReason: Schema.optional(ThreadIssueClosedReason),
   commentCount: NonNegativeInt,
 });
 export type IssueDetail = typeof IssueDetail.Type;
@@ -63,6 +65,7 @@ export const IssueUnavailableReason = Schema.Literals([
   "tracker-unsupported",
   "cli-missing",
   "cli-unauthenticated",
+  "rate-limited",
 ]);
 export type IssueUnavailableReason = typeof IssueUnavailableReason.Type;
 
@@ -87,6 +90,10 @@ export class IssueUnavailableError extends Schema.TaggedError<IssueUnavailableEr
         return this.tracker === "gitlab"
           ? "Run `glab auth login` on this environment to read GitLab issues."
           : "Run `gh auth login` on this environment to read GitHub issues.";
+      case "rate-limited":
+        return this.tracker === "gitlab"
+          ? "GitLab is rate limiting this environment; issues will refresh later."
+          : "GitHub is rate limiting this environment; issues will refresh later.";
     }
   }
 }
@@ -97,5 +104,71 @@ export class IssueReadError extends Schema.TaggedError<IssueReadError>()("IssueR
 }) {
   override get message(): string {
     return `Could not read the issue: ${this.detail}`;
+  }
+}
+
+/**
+ * Links the issue a person typed to a thread. The server resolves the reference against the
+ * thread's project and reads the issue first, so a typo or a pull request number is refused.
+ */
+export const IssueLinkInput = Schema.Struct({
+  threadId: ThreadId,
+  /** An issue URL, `owner/repo#42`, or `#42` in the thread project's own repository. */
+  reference: TrimmedNonEmptyString,
+});
+export type IssueLinkInput = typeof IssueLinkInput.Type;
+
+export const IssueLinkResult = Schema.Struct({
+  ...ThreadIssueKey.fields,
+  displayKey: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  /** True when the issue was linked to the thread before the call. */
+  alreadyLinked: Schema.Boolean,
+});
+export type IssueLinkResult = typeof IssueLinkResult.Type;
+
+export class IssueReferenceInvalidError extends Schema.TaggedError<IssueReferenceInvalidError>()(
+  "IssueReferenceInvalidError",
+  {},
+) {
+  override get message(): string {
+    return "This does not name a GitHub or GitLab issue. Use its URL, owner/repo#42, or #42 when the project is on GitHub or GitLab.";
+  }
+}
+
+export class IssueThreadNotFoundError extends Schema.TaggedError<IssueThreadNotFoundError>()(
+  "IssueThreadNotFoundError",
+  { threadId: Schema.String },
+) {
+  override get message(): string {
+    return `Thread ${this.threadId} was not found.`;
+  }
+}
+
+/** The thread or its project could not be read to resolve an issue reference. */
+export class IssueThreadReadError extends Schema.TaggedError<IssueThreadReadError>()(
+  "IssueThreadReadError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Could not read the thread.";
+  }
+}
+
+export class IssueLinkFailedError extends Schema.TaggedError<IssueLinkFailedError>()(
+  "IssueLinkFailedError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Could not link the issue.";
+  }
+}
+
+export class IssueUnlinkFailedError extends Schema.TaggedError<IssueUnlinkFailedError>()(
+  "IssueUnlinkFailedError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Could not unlink the issue.";
   }
 }

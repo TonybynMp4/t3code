@@ -13,9 +13,11 @@ import {
   gitIssueLink,
   normalizeThreadIssueKey,
   parseGitIssueId,
+  projectIssueDefaults,
 } from "@t3tools/shared/threadIssues";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -35,6 +37,14 @@ const DEFAULT_COMMENT_LIMIT = 30;
 const MAX_COMMENT_LIMIT = 100;
 /** Long enough that a viewer opening an issue and an agent reading it share one request. */
 const DETAIL_TTL = Duration.seconds(30);
+/** Hosts every environment may read issues from; any other host must be the project's own. */
+const PUBLIC_HOSTS: Record<GitIssueTracker, string> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+};
+
+/** Compared by value, so equal references share one cached read. */
+class IssueCacheKey extends Data.Class<IssueRef> {}
 
 const GitHubUser = Schema.NullOr(
   Schema.Struct({
@@ -59,6 +69,7 @@ const GitHubIssueJson = Schema.Struct({
   created_at: Schema.String,
   updated_at: Schema.NullOr(Schema.String),
   closed_at: Schema.NullOr(Schema.String),
+  state_reason: Schema.optional(Schema.NullOr(Schema.String)),
   comments: Schema.Number,
   html_url: Schema.String,
   /** Present when the number belongs to a pull request, which GitHub also serves as an issue. */
@@ -128,6 +139,22 @@ function gitLabActor(user: typeof GitLabUser.Type): PullRequestActor | null {
   };
 }
 
+/** GitHub greys out issues closed as not planned or as duplicates; anything else closed is done. */
+function gitHubClosedReason(json: typeof GitHubIssueJson.Type): Pick<IssueDetail, "closedReason"> {
+  if (json.state !== "closed") return {};
+  return {
+    closedReason:
+      json.state_reason === "not_planned" || json.state_reason === "duplicate"
+        ? "not-planned"
+        : "completed",
+  };
+}
+
+/** A repository path as an API path, each segment encoded. */
+function gitHubRepositoryPath(repository: string): string {
+  return repository.split("/").map(encodeURIComponent).join("/");
+}
+
 /** Pages are numbered from 1; the cursor is that number, opaque to callers. */
 function pageOf(cursor: string | undefined): number {
   const page = cursor === undefined ? 1 : Number(cursor);
@@ -180,6 +207,14 @@ const make = Effect.gen(function* () {
     if (Option.isNone(project)) {
       return yield* new IssueReadError({ detail: "The project does not exist." });
     }
+    // The CLI sends its credentials to the host it is pointed at, so only known hosts are read.
+    const projectDefaults = projectIssueDefaults(project.value.repositoryIdentity);
+    const projectHost = projectDefaults?.tracker === tracker ? projectDefaults.host : null;
+    if (key.host !== PUBLIC_HOSTS[tracker] && key.host !== projectHost) {
+      return yield* new IssueReadError({
+        detail: `Issues on ${key.host} can only be read from a project hosted there.`,
+      });
+    }
     return {
       issue: gitIssueLink(tracker, key.host, parsed.repository, parsed.number),
       cwd: project.value.workspaceRoot,
@@ -205,6 +240,12 @@ const make = Effect.gen(function* () {
             case "GitHubCliAuthenticationError":
               return new IssueUnavailableError({
                 reason: "cli-unauthenticated",
+                tracker: "github",
+                cause,
+              });
+            case "GitHubCliRateLimitError":
+              return new IssueUnavailableError({
+                reason: "rate-limited",
                 tracker: "github",
                 cause,
               });
@@ -240,6 +281,12 @@ const make = Effect.gen(function* () {
                 tracker: "gitlab",
                 cause,
               });
+            case "GitLabCliRateLimitError":
+              return new IssueUnavailableError({
+                reason: "rate-limited",
+                tracker: "gitlab",
+                cause,
+              });
             default:
               return new IssueReadError({ detail: "GitLab could not be read.", cause });
           }
@@ -260,7 +307,7 @@ const make = Effect.gen(function* () {
       const json = yield* runGitHub(
         cwd,
         issue.host,
-        `repos/${issue.repository}/issues/${issue.number}`,
+        `repos/${gitHubRepositoryPath(issue.repository)}/issues/${issue.number}`,
       ).pipe(Effect.flatMap(decodeJson(GitHubIssueJson)));
       if (json.pull_request !== undefined) {
         return yield* new IssueReadError({
@@ -284,6 +331,7 @@ const make = Effect.gen(function* () {
         createdAt: json.created_at,
         updatedAt: json.updated_at,
         closedAt: json.closed_at,
+        ...gitHubClosedReason(json),
         commentCount: json.comments,
       } satisfies IssueDetail;
     }
@@ -309,24 +357,16 @@ const make = Effect.gen(function* () {
     } satisfies IssueDetail;
   });
 
-  // Keyed by the normalized reference as JSON, since the cache compares keys by value.
-  const details = yield* Cache.makeWith((key: string) => readIssue(JSON.parse(key) as IssueRef), {
+  const details = yield* Cache.makeWith((key: IssueCacheKey) => readIssue(key), {
     capacity: 256,
     timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_TTL : Duration.zero),
   });
 
-  const getIssue = (ref: IssueRef) => {
-    const key = normalizeThreadIssueKey(ref);
-    return Cache.get(
+  const getIssue = (ref: IssueRef) =>
+    Cache.get(
       details,
-      JSON.stringify({
-        projectId: ref.projectId,
-        tracker: key.tracker,
-        host: key.host,
-        id: key.id,
-      }),
+      new IssueCacheKey({ projectId: ref.projectId, ...normalizeThreadIssueKey(ref) }),
     );
-  };
 
   const listComments = Effect.fn("IssueService.listComments")(function* (
     input: IssueCommentsInput,
@@ -340,7 +380,7 @@ const make = Effect.gen(function* () {
       const json = yield* runGitHub(
         cwd,
         issue.host,
-        `repos/${issue.repository}/issues/${issue.number}/comments?per_page=${limit}&page=${page}`,
+        `repos/${gitHubRepositoryPath(issue.repository)}/issues/${issue.number}/comments?per_page=${limit}&page=${page}`,
       ).pipe(Effect.flatMap(decodeJson(GitHubCommentsJson)));
       fullPage = json.length === limit;
       comments = json.map((comment) => ({

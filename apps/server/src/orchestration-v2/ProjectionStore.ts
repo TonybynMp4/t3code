@@ -162,7 +162,10 @@ export type ProjectionThreadPullRequests = Pick<
 >;
 
 /** The thread fields issue sync reads, for a thread with at least one link. */
-export type ProjectionThreadIssues = Pick<OrchestrationV2AppThread, "id" | "projectId"> & {
+export type ProjectionThreadIssues = Pick<
+  OrchestrationV2AppThread,
+  "id" | "projectId" | "settledOverride" | "settledAt"
+> & {
   readonly issues: ReadonlyArray<ThreadIssueLink>;
 };
 
@@ -1302,6 +1305,12 @@ function buildVisibleTurnItems(input: {
   ]);
 }
 
+/** A shell's `issues`, omitted when there are none so older clients see the shape they know. */
+function issuesField(thread: Pick<OrchestrationV2AppThread, "issues">) {
+  const issues = threadIssuesOf(thread);
+  return issues.length === 0 ? {} : { issues };
+}
+
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
@@ -1360,9 +1369,7 @@ export function threadShellFromProjection(
     branch: projection.thread.branch,
     worktreePath: projection.thread.worktreePath,
     pullRequests: threadPullRequestsOf(projection.thread),
-    ...(threadIssuesOf(projection.thread).length === 0
-      ? {}
-      : { issues: threadIssuesOf(projection.thread) }),
+    ...issuesField(projection.thread),
     ...(projection.thread.linkedPullRequest === undefined
       ? {}
       : { linkedPullRequest: projection.thread.linkedPullRequest }),
@@ -1596,9 +1603,7 @@ function shellFromState(input: {
     branch: input.state.thread.branch,
     worktreePath: input.state.thread.worktreePath,
     pullRequests: threadPullRequestsOf(input.state.thread),
-    ...(threadIssuesOf(input.state.thread).length === 0
-      ? {}
-      : { issues: threadIssuesOf(input.state.thread) }),
+    ...issuesField(input.state.thread),
     ...(input.state.thread.linkedPullRequest === undefined
       ? {}
       : { linkedPullRequest: input.state.thread.linkedPullRequest }),
@@ -5191,6 +5196,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             Effect.map((thread): ProjectionThreadIssues => ({
               id: thread.id,
               projectId: thread.projectId,
+              settledOverride: thread.settledOverride,
+              settledAt: thread.settledAt,
               issues: threadIssuesOf(thread),
             })),
           ),
@@ -5670,6 +5677,8 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
               .map((thread): ProjectionThreadIssues => ({
                 id: thread.id,
                 projectId: thread.projectId,
+                settledOverride: thread.settledOverride,
+                settledAt: thread.settledAt,
                 issues: threadIssuesOf(thread),
               })),
           ),

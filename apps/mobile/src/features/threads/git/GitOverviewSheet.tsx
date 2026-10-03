@@ -406,7 +406,10 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
                       : "exclamationmark.circle"
                   }
                   title={link.snapshot?.title ?? link.displayKey}
-                  subtitle={`${link.displayKey} · ${link.snapshot?.state ?? "Status pending"}`}
+                  subtitle={`${link.displayKey} · ${
+                    link.snapshot?.state ??
+                    (link.syncError === undefined ? "Status pending" : "Could not read")
+                  }`}
                   onPress={() => onPressIssue(link)}
                 />
               </View>

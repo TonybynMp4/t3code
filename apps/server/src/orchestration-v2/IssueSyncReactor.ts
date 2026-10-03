@@ -22,13 +22,24 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 const OPEN_SYNC_INTERVAL_MS = 5 * 60 * 1_000;
-const CLOSED_SYNC_INTERVAL_MS = 30 * 60 * 1_000;
+/** Closed issues, and open ones whose threads have all settled, change rarely. */
+const SLOW_SYNC_INTERVAL_MS = 30 * 60 * 1_000;
+/** An issue the tracker refuses (deleted, private, a pull request) is not worth asking often. */
+const UNREADABLE_RETRY_MS = 30 * 60 * 1_000;
+/** A missing or signed-out CLI may be fixed at any moment. */
+const UNAVAILABLE_RETRY_MS = 5 * 60 * 1_000;
+/** A rate-limited host is left alone for a while, so other reads on it stop piling on. */
+const RATE_LIMIT_PAUSE_MS = 15 * 60 * 1_000;
 
 type SnapshotFields = Omit<ThreadIssueSnapshot, "syncedAt">;
 
 interface LinkEntry {
   readonly thread: ProjectionStore.ProjectionThreadIssues;
   readonly link: ThreadIssueLink;
+}
+
+function isUnsettled(thread: ProjectionStore.ProjectionThreadIssues): boolean {
+  return thread.settledOverride !== "settled" && thread.settledAt === null;
 }
 
 function snapshotFieldsOf(issue: IssueDetail): SnapshotFields {
@@ -39,6 +50,7 @@ function snapshotFieldsOf(issue: IssueDetail): SnapshotFields {
     labels: issue.labels,
     updatedAt: issue.updatedAt,
     closedAt: issue.closedAt,
+    ...(issue.closedReason === undefined ? {} : { closedReason: issue.closedReason }),
   };
 }
 
@@ -48,6 +60,7 @@ function snapshotFieldsEqual(left: SnapshotFields, right: SnapshotFields): boole
     left.title === right.title &&
     left.updatedAt === right.updatedAt &&
     left.closedAt === right.closedAt &&
+    left.closedReason === right.closedReason &&
     (left.author?.login ?? null) === (right.author?.login ?? null) &&
     (left.author?.avatarUrl ?? null) === (right.author?.avatarUrl ?? null) &&
     left.labels.length === right.labels.length &&
@@ -61,8 +74,9 @@ function snapshotFieldsEqual(left: SnapshotFields, right: SnapshotFields): boole
 /**
  * Keeps the title and state of every thread ↔ issue link current. A sweep every minute reads the
  * active threads with issue links, asks the tracker once per issue however many threads share
- * it, and writes back only what changed. New links are read right away; open issues every few
- * minutes, closed ones (which can reopen) rarely.
+ * it, and writes back only what changed. New links are read right away; open issues on active
+ * threads every few minutes, the rest (closed issues can reopen) rarely. An issue the tracker
+ * refuses gets its reason recorded on the link, so it does not look pending forever.
  */
 export class IssueSyncReactor extends Context.Service<
   IssueSyncReactor,
@@ -79,26 +93,59 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
 
   const lastSyncedAt = new Map<string, number>();
-  // An issue that cannot be read (deleted, private, a pull request) waits before the next try.
-  const failedAt = new Map<string, number>();
+  // When an issue that failed to read may be tried again.
+  const retryAt = new Map<string, number>();
+  // Hosts that rate-limited us, until when.
+  const pausedUntil = new Map<string, number>();
   let sweepQueued = false;
 
   const isDue = (key: string, entries: ReadonlyArray<LinkEntry>, nowMs: number): boolean => {
-    const failed = failedAt.get(key);
-    if (failed !== undefined && nowMs - failed < OPEN_SYNC_INTERVAL_MS) return false;
+    const retry = retryAt.get(key);
+    if (retry !== undefined) return nowMs >= retry;
     if (entries.some((entry) => entry.link.snapshot === null)) return true;
     const last = lastSyncedAt.get(key);
     if (last === undefined) return true;
-    const interval = entries.some((entry) => entry.link.snapshot?.state === "open")
-      ? OPEN_SYNC_INTERVAL_MS
-      : CLOSED_SYNC_INTERVAL_MS;
-    return nowMs - last >= interval;
+    const active = entries.some(
+      (entry) => entry.link.snapshot?.state === "open" && isUnsettled(entry.thread),
+    );
+    return nowMs - last >= (active ? OPEN_SYNC_INTERVAL_MS : SLOW_SYNC_INTERVAL_MS);
   };
 
   const logSkipped =
     (message: string, fields: Record<string, unknown>) =>
     <E>(cause: Cause.Cause<E>): Effect.Effect<void, E> =>
-      Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.logWarning(message, fields);
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause)
+        : Effect.logWarning(message, { ...fields, cause: Cause.pretty(cause) });
+
+  const commandIdFor = (threadId: string) =>
+    crypto.randomUUIDv4.pipe(
+      Effect.map((uuid) => CommandId.make(`server:issue-sync:${threadId}:${uuid}`)),
+    );
+
+  /** Records why the issue could not be read on every link that does not say so already. */
+  const recordFailure = (key: string, entries: ReadonlyArray<LinkEntry>, error: string) =>
+    Effect.forEach(
+      entries.filter(({ link }) => link.syncError !== error),
+      ({ thread, link }) =>
+        commandIdFor(thread.id).pipe(
+          Effect.flatMap((commandId) =>
+            engine.dispatch({
+              type: "thread.issue-link.sync-failed",
+              commandId,
+              threadId: thread.id,
+              tracker: link.tracker,
+              host: link.host,
+              id: link.id,
+              error,
+            }),
+          ),
+          Effect.catchCause(
+            logSkipped("issue sync failure not recorded", { threadId: thread.id, key }),
+          ),
+        ),
+      { discard: true },
+    );
 
   const syncGroup = Effect.fn("IssueSyncReactor.syncGroup")(function* (
     key: string,
@@ -106,25 +153,34 @@ const make = Effect.gen(function* () {
     now: DateTime.Utc,
   ) {
     const first = entries[0]!;
-    const issue = yield* issues.getIssue({
-      projectId: first.thread.projectId,
-      tracker: first.link.tracker,
-      host: first.link.host,
-      id: first.link.id,
-    });
+    const issue = yield* issues
+      .getIssue({
+        projectId: first.thread.projectId,
+        tracker: first.link.tracker,
+        host: first.link.host,
+        id: first.link.id,
+      })
+      .pipe(
+        Effect.tapError((error) =>
+          error._tag === "IssueReadError" ? recordFailure(key, entries, error.detail) : Effect.void,
+        ),
+      );
     lastSyncedAt.set(key, DateTime.toEpochMillis(now));
-    failedAt.delete(key);
+    retryAt.delete(key);
     const fields = snapshotFieldsOf(issue);
     yield* Effect.forEach(
       entries.filter(
-        ({ link }) => link.snapshot === null || !snapshotFieldsEqual(link.snapshot, fields),
+        ({ link }) =>
+          link.snapshot === null ||
+          link.syncError !== undefined ||
+          !snapshotFieldsEqual(link.snapshot, fields),
       ),
       ({ thread, link }) =>
-        crypto.randomUUIDv4.pipe(
-          Effect.flatMap((uuid) =>
+        commandIdFor(thread.id).pipe(
+          Effect.flatMap((commandId) =>
             engine.dispatch({
               type: "thread.issue-link.sync",
-              commandId: CommandId.make(`server:issue-sync:${thread.id}:${uuid}`),
+              commandId,
               threadId: thread.id,
               tracker: link.tracker,
               host: link.host,
@@ -152,27 +208,47 @@ const make = Effect.gen(function* () {
         groups.set(key, entries);
       }
     }
-    for (const map of [lastSyncedAt, failedAt]) {
+    for (const map of [lastSyncedAt, retryAt]) {
       for (const key of map.keys()) if (!groups.has(key)) map.delete(key);
     }
 
     // A missing or signed-out CLI fails every read on that host; stop asking it for this sweep.
     const unavailableHosts = new Set<string>();
     const hostOf = ({ link }: LinkEntry) => `${link.tracker}:${link.host.toLowerCase()}`;
+    const isSkipped = (host: string) =>
+      unavailableHosts.has(host) || (pausedUntil.get(host) ?? 0) > nowMs;
 
     yield* Effect.forEach(
       groups,
       ([key, entries]) =>
-        isDue(key, entries, nowMs) && !unavailableHosts.has(hostOf(entries[0]!))
+        isDue(key, entries, nowMs) && !isSkipped(hostOf(entries[0]!))
           ? syncGroup(key, entries, now).pipe(
               Effect.tapError((error) =>
                 Effect.sync(() => {
+                  const host = hostOf(entries[0]!);
                   if (error._tag === "IssueUnavailableError") {
-                    unavailableHosts.add(hostOf(entries[0]!));
+                    unavailableHosts.add(host);
+                    if (error.reason === "rate-limited") {
+                      pausedUntil.set(host, nowMs + RATE_LIMIT_PAUSE_MS);
+                    }
+                  }
+                  retryAt.set(
+                    key,
+                    nowMs +
+                      (error._tag === "IssueReadError"
+                        ? UNREADABLE_RETRY_MS
+                        : UNAVAILABLE_RETRY_MS),
+                  );
+                }),
+              ),
+              Effect.tapCause(() =>
+                Effect.sync(() => {
+                  // Typed errors set their own wait above; anything else still waits.
+                  if ((retryAt.get(key) ?? 0) <= nowMs) {
+                    retryAt.set(key, nowMs + UNAVAILABLE_RETRY_MS);
                   }
                 }),
               ),
-              Effect.tapCause(() => Effect.sync(() => failedAt.set(key, nowMs))),
               Effect.catchCause(logSkipped("issue sync skipped", { key })),
             )
           : Effect.void,
@@ -199,7 +275,9 @@ const make = Effect.gen(function* () {
       yield* forkParked(
         Stream.runForEach(engine.streamDomainEvents, (event) =>
           event.type === "thread.metadata-updated" &&
-          threadIssuesOf(event.payload).some((link) => link.snapshot === null)
+          threadIssuesOf(event.payload).some(
+            (link) => link.snapshot === null && link.syncError === undefined,
+          )
             ? enqueueSweep
             : Effect.void,
         ).pipe(Effect.catchCause(logSkipped("issue sync event stream failed", {}))),

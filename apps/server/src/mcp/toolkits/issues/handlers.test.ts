@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import type { Tool } from "effect/unstable/ai";
 
 import * as IssueService from "../../../issue/IssueService.ts";
+import * as ThreadIssueService from "../../../issue/ThreadIssueService.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import { v2PullRequestThread } from "../../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
@@ -106,7 +107,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
     }),
     issues: [linked],
   };
-  const dependencies = Layer.mergeAll(
+  const services = Layer.mergeAll(
     Layer.mock(ProjectService.ProjectService)({
       getShell: () => Effect.succeedSome(project),
     }),
@@ -135,6 +136,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
   );
+  const dependencies = Layer.provideMerge(ThreadIssueService.layer, services);
   const toolkit = yield* IssuesToolkit.pipe(
     Effect.provide(IssuesToolkitHandlersLive.pipe(Layer.provide(dependencies))),
   );
@@ -231,6 +233,7 @@ describe("issue toolkit handlers", () => {
             source: "manual",
             state: null,
             title: null,
+            syncError: null,
           },
         ],
       });

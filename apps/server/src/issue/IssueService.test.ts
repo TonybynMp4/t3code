@@ -146,6 +146,61 @@ describe("IssueService", () => {
     ),
   );
 
+  it.effect("keeps why a GitHub issue closed", () =>
+    run(
+      Effect.gen(function* () {
+        const issues = yield* IssueService.IssueService;
+        const detail = yield* issues.getIssue(githubRef);
+        assert.equal(detail.state, "closed");
+        assert.equal(detail.closedReason, "not-planned");
+      }),
+      {
+        github: () =>
+          Effect.succeed(
+            output({
+              ...gitHubIssue,
+              state: "closed",
+              state_reason: "not_planned",
+              closed_at: "2026-09-03T00:00:00Z",
+            }),
+          ),
+      },
+    ),
+  );
+
+  it.effect("reads only the public hosts and the project's own", () =>
+    run(
+      Effect.gen(function* () {
+        const issues = yield* IssueService.IssueService;
+        const error = yield* Effect.flip(
+          issues.getIssue({ ...githubRef, host: "github.attacker.example" }),
+        );
+        assert.equal(error._tag, "IssueReadError");
+      }),
+      {},
+    ),
+  );
+
+  it.effect("tells a rate limit apart from an unreadable issue", () =>
+    run(
+      Effect.gen(function* () {
+        const issues = yield* IssueService.IssueService;
+        const error = yield* Effect.flip(issues.getIssue(githubRef));
+        assert.deepInclude(error, { _tag: "IssueUnavailableError", reason: "rate-limited" });
+      }),
+      {
+        github: () =>
+          Effect.fail(
+            new GitHubCli.GitHubCliRateLimitError({
+              command: "gh",
+              cwd: "/workspace/app",
+              cause: new Error("rate limited"),
+            }),
+          ),
+      },
+    ),
+  );
+
   it.effect("pages GitLab notes without system notes", () => {
     const endpoints: Array<string> = [];
     return run(

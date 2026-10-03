@@ -1,6 +1,11 @@
 import {
+  IssueLinkFailedError,
   IssueReadError,
+  IssueReferenceInvalidError,
+  IssueThreadNotFoundError,
+  IssueThreadReadError,
   IssueUnavailableError,
+  IssueUnlinkFailedError,
   McpCapabilityUnavailableError,
   ThreadIssueLinkSource,
   ThreadIssueState,
@@ -11,15 +16,15 @@ import * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
 
 import * as IssueService from "../../../issue/IssueService.ts";
+import * as ThreadIssueService from "../../../issue/ThreadIssueService.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import * as ProjectService from "../../../project/ProjectService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   Orchestrator.OrchestratorV2,
-  ProjectService.ProjectService,
   IssueService.IssueService,
+  ThreadIssueService.ThreadIssueService,
 ];
 
 export const IssueTargetInput = Schema.Struct({
@@ -29,42 +34,6 @@ export const IssueTargetInput = Schema.Struct({
   }),
 });
 export type IssueTargetInput = typeof IssueTargetInput.Type;
-
-export class IssueReferenceInvalidError extends Schema.TaggedError<IssueReferenceInvalidError>()(
-  "IssueReferenceInvalidError",
-  {},
-) {
-  override get message(): string {
-    return "This does not name a GitHub or GitLab issue. Pass its URL, owner/repo#42, or #42 when the thread's project is on GitHub or GitLab.";
-  }
-}
-
-export class IssueThreadNotFoundError extends Schema.TaggedError<IssueThreadNotFoundError>()(
-  "IssueThreadNotFoundError",
-  { threadId: Schema.String },
-) {
-  override get message(): string {
-    return `Thread ${this.threadId} was not found.`;
-  }
-}
-
-export class IssueLinkFailedError extends Schema.TaggedError<IssueLinkFailedError>()(
-  "IssueLinkFailedError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Could not link the issue.";
-  }
-}
-
-export class IssueUnlinkFailedError extends Schema.TaggedError<IssueUnlinkFailedError>()(
-  "IssueUnlinkFailedError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Could not unlink the issue.";
-  }
-}
 
 export class IssueListFailedError extends Schema.TaggedError<IssueListFailedError>()(
   "IssueListFailedError",
@@ -79,6 +48,7 @@ export const IssueToolError = Schema.Union([
   McpCapabilityUnavailableError,
   IssueReferenceInvalidError,
   IssueThreadNotFoundError,
+  IssueThreadReadError,
   IssueLinkFailedError,
   IssueUnlinkFailedError,
   IssueListFailedError,
@@ -114,6 +84,9 @@ export const LinkedIssueEntry = Schema.Struct({
   source: ThreadIssueLinkSource,
   state: Schema.NullOr(ThreadIssueState),
   title: Schema.NullOr(Schema.String),
+  syncError: Schema.NullOr(Schema.String).annotate({
+    description: "Why T3 Code could not read the issue last time; null when it could.",
+  }),
 });
 export type LinkedIssueEntry = typeof LinkedIssueEntry.Type;
 

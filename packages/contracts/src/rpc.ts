@@ -10,8 +10,14 @@ import {
   IssueCommentPage,
   IssueCommentsInput,
   IssueDetail,
+  IssueLinkFailedError,
+  IssueLinkInput,
+  IssueLinkResult,
   IssueReadError,
+  IssueReferenceInvalidError,
   IssueRef,
+  IssueThreadNotFoundError,
+  IssueThreadReadError,
   IssueUnavailableError,
 } from "./issue.ts";
 import * as Schema from "effect/Schema";
@@ -497,6 +503,7 @@ export const WS_METHODS = {
   pullRequestsDetail: "pullRequests.detail",
   issuesDetail: "issues.detail",
   issuesComments: "issues.comments",
+  issuesLink: "issues.link",
   pullRequestsPreview: "pullRequests.preview",
   pullRequestsChecks: "pullRequests.checks",
   pullRequestsActivity: "pullRequests.activity",
@@ -959,6 +966,19 @@ const WsIssuesCommentsRpc = Rpc.make(WS_METHODS.issuesComments, {
   payload: IssueCommentsInput,
   success: IssueCommentPage,
   error: IssueRpcError,
+});
+
+const WsIssuesLinkRpc = Rpc.make(WS_METHODS.issuesLink, {
+  payload: IssueLinkInput,
+  success: IssueLinkResult,
+  error: Schema.Union([
+    IssueReferenceInvalidError,
+    IssueThreadNotFoundError,
+    IssueThreadReadError,
+    IssueReadError,
+    IssueLinkFailedError,
+    EnvironmentAuthorizationError,
+  ]),
 });
 
 const WsPullRequestsDetailRpc = Rpc.make(WS_METHODS.pullRequestsDetail, {
@@ -1779,6 +1799,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsDetailRpc,
   WsIssuesDetailRpc,
   WsIssuesCommentsRpc,
+  WsIssuesLinkRpc,
   WsPullRequestsPreviewRpc,
   WsPullRequestsChecksRpc,
   WsPullRequestsActivityRpc,

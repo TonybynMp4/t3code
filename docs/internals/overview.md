@@ -43,7 +43,14 @@ Issue links follow the same rule behind `threadIssues: true`. They live in their
 `issues[]` on the thread, not in `pullRequests[]`, and their commands emit the existing
 `thread.metadata-updated` event, so an older client decodes a newer environment's events and only
 misses the field. `tracker` is an open string rather than a closed union, so adding a tracker such
-as Jira later does not break decoding on clients that cannot show it.
+as Jira later does not break decoding on clients that cannot show it. The trade-off: every link, unlink, and
+sync also wakes `thread.metadata-updated` consumers such as the branch pull request lookup, so sync
+writes only when the tracker's answer changed.
+
+Links are created only on the server (`ThreadIssueService`, behind the `issues.link` RPC and the MCP
+tools), which reads the issue first and builds the stored URL from its key. Issue reads go through
+the `gh` and `glab` logins, which send credentials to whichever host they are pointed at, so
+`IssueService` only reads the public hosts and the project's own remote host.
 
 Provider-specific behavior belongs behind an adapter. Orchestration works with normalized commands
 and events, so adding a provider should not require branches throughout the domain or clients.

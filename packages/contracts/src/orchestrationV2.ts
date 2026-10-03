@@ -2624,15 +2624,6 @@ export const OrchestrationV2Command = Schema.Union([
     ),
   }),
   Schema.Struct({
-    type: Schema.Literal("thread.issue.link"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    ...ThreadIssueKey.fields,
-    displayKey: TrimmedNonEmptyString,
-    url: TrimmedNonEmptyString,
-    source: ThreadIssueLinkSource,
-  }),
-  Schema.Struct({
     type: Schema.Literal("thread.issue.unlink"),
     commandId: CommandId,
     threadId: ThreadId,
@@ -2939,6 +2930,19 @@ const OrchestrationV2InternalCommand = Schema.Union([
     providerThreadId: ProviderThreadId,
     providerTurnId: ProviderTurnId,
   }),
+  /**
+   * Links an issue the server has resolved and read, so the stored URL and key come from the
+   * server rather than a client. Clients link through the `issues.link` RPC.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.issue.link"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadIssueKey.fields,
+    displayKey: TrimmedNonEmptyString,
+    url: TrimmedNonEmptyString,
+    source: ThreadIssueLinkSource,
+  }),
   /** Writes the tracker state the issue sync reactor read onto a linked issue. */
   Schema.Struct({
     type: Schema.Literal("thread.issue-link.sync"),
@@ -2946,6 +2950,14 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     ...ThreadIssueKey.fields,
     snapshot: ThreadIssueSnapshot,
+  }),
+  /** Records why the issue sync reactor could not read a linked issue. */
+  Schema.Struct({
+    type: Schema.Literal("thread.issue-link.sync-failed"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadIssueKey.fields,
+    error: TrimmedNonEmptyString,
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

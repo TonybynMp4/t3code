@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useProjects, useServerConfigs, useThreadShell } from "~/state/entities";
-import { threadEnvironment } from "~/state/threads";
+import { issueEnvironment } from "~/state/issues";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import {
@@ -71,7 +71,7 @@ function LinkIssueDialog({
   const [pending, setPending] = useState(false);
   const thread = useThreadShell(threadRef);
   const projects = useProjects();
-  const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
+  const link = useAtomCommand(issueEnvironment.link, { reportFailure: false });
 
   const defaults = useMemo(() => {
     const project = projects.find(
@@ -91,6 +91,8 @@ function LinkIssueDialog({
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
+  // The server resolves the reference again and reads the issue, so a typo or a pull request
+  // number comes back as an error here instead of a link that never syncs.
   const submit = useCallback(async () => {
     setDirty(true);
     if (resolved === null || alreadyLinked) return;
@@ -98,15 +100,7 @@ function LinkIssueDialog({
     setPending(true);
     const result = await link({
       environmentId: threadRef.environmentId,
-      input: {
-        threadId: threadRef.threadId,
-        tracker: resolved.tracker,
-        host: resolved.host,
-        id: resolved.id,
-        displayKey: resolved.displayKey,
-        url: resolved.url,
-        source: "manual",
-      },
+      input: { threadId: threadRef.threadId, reference: reference.trim() },
     });
     setPending(false);
     if (result._tag === "Failure") {
@@ -115,7 +109,7 @@ function LinkIssueDialog({
       return;
     }
     onClose();
-  }, [alreadyLinked, link, onClose, resolved, threadRef]);
+  }, [alreadyLinked, link, onClose, reference, resolved, threadRef]);
 
   const validation = !dirty
     ? null
@@ -145,6 +139,7 @@ function LinkIssueDialog({
             value={reference}
             onChange={(event) => {
               setDirty(true);
+              setSubmitError(null);
               setReference(event.target.value);
             }}
             onKeyDown={(event) => {

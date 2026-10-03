@@ -384,6 +384,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.issue.link":
     case "thread.issue.unlink":
     case "thread.issue-link.sync":
+    case "thread.issue-link.sync-failed":
     case "thread.title.regeneration.complete":
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
@@ -2313,6 +2314,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.issue.link"
           | "thread.issue.unlink"
           | "thread.issue-link.sync"
+          | "thread.issue-link.sync-failed"
           | "thread.title.regeneration.complete"
           | "thread.runtime-mode.set"
           | "thread.interaction-mode.set"
@@ -2996,7 +2998,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
         case "thread.issue.link":
         case "thread.issue.unlink":
-        case "thread.issue-link.sync": {
+        case "thread.issue-link.sync":
+        case "thread.issue-link.sync-failed": {
           const key = normalizeThreadIssueKey(command);
           const links = threadIssuesOf(thread);
           const existing = links.find((link) => threadIssueKeysEqual(link, key));
@@ -3017,17 +3020,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           } else if (command.type === "thread.issue.unlink") {
             if (!existing) return thread;
             issues = links.filter((link) => link !== existing);
-          } else {
+          } else if (command.type === "thread.issue-link.sync") {
             if (!existing) return thread;
+            const { syncError: _cleared, ...synced } = existing;
             issues = links.map((link) =>
-              link === existing ? { ...link, snapshot: command.snapshot } : link,
+              link === existing ? { ...synced, snapshot: command.snapshot } : link,
+            );
+          } else {
+            if (!existing || existing.syncError === command.error) return thread;
+            issues = links.map((link) =>
+              link === existing ? { ...link, syncError: command.error } : link,
             );
           }
           return {
             ...thread,
             issues,
             // A sync is the tracker's news, not activity on the thread.
-            updatedAt: command.type === "thread.issue-link.sync" ? thread.updatedAt : now,
+            updatedAt:
+              command.type === "thread.issue-link.sync" ||
+              command.type === "thread.issue-link.sync-failed"
+                ? thread.updatedAt
+                : now,
           };
         }
         case "thread.pull-request.sync":
@@ -3119,6 +3132,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.issue.link":
         case "thread.issue.unlink":
         case "thread.issue-link.sync":
+        case "thread.issue-link.sync-failed":
           return "thread.metadata-updated" as const;
         case "thread.pull-request.link":
         case "thread.pull-request.unlink":
@@ -9333,6 +9347,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.issue.link":
       case "thread.issue.unlink":
       case "thread.issue-link.sync":
+      case "thread.issue-link.sync-failed":
       case "thread.title.regeneration.complete":
       case "thread.runtime-mode.set":
       case "thread.interaction-mode.set":

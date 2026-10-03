@@ -1051,25 +1051,11 @@ export const unlinkThreadPullRequest = Effect.fn("EnvironmentCommands.unlinkThre
   },
 );
 
-export type LinkThreadIssueInput = Omit<
-  Extract<OrchestrationV2Command, { type: "thread.issue.link" }>,
-  "type" | "commandId"
-> &
-  CommandMetadata;
 export type UnlinkThreadIssueInput = Omit<
   Extract<OrchestrationV2Command, { type: "thread.issue.unlink" }>,
   "type" | "commandId"
 > &
   CommandMetadata;
-export const linkThreadIssue = Effect.fn("EnvironmentCommands.linkThreadIssue")(function* (
-  input: LinkThreadIssueInput,
-) {
-  return yield* dispatch({
-    ...input,
-    type: "thread.issue.link",
-    commandId: yield* allocateCommandId(input),
-  });
-});
 export const unlinkThreadIssue = Effect.fn("EnvironmentCommands.unlinkThreadIssue")(function* (
   input: UnlinkThreadIssueInput,
 ) {

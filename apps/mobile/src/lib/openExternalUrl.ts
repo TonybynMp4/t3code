@@ -11,6 +11,9 @@ const ExternalUrlTarget = Schema.Literals([
 
 export type ExternalUrlTarget = typeof ExternalUrlTarget.Type;
 
+/** Targets that are always web pages, so any other scheme is refused rather than handed to the OS. */
+const WEB_ONLY_TARGETS: ReadonlySet<ExternalUrlTarget> = new Set(["issue"]);
+
 export class ExternalUrlOpenError extends Schema.TaggedError<ExternalUrlOpenError>()(
   "ExternalUrlOpenError",
   {
@@ -40,6 +43,10 @@ function externalUrlMetadata(url: string): { readonly scheme: string; readonly h
 }
 
 export async function tryOpenExternalUrl(url: string, target: ExternalUrlTarget): Promise<boolean> {
+  if (WEB_ONLY_TARGETS.has(target)) {
+    const { scheme } = externalUrlMetadata(url);
+    if (scheme !== "https" && scheme !== "http") return false;
+  }
   try {
     await Linking.openURL(url);
     return true;
