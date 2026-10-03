@@ -7,11 +7,7 @@ import type {
   ThreadIssueState,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import {
-  threadIssueKeyOf,
-  threadIssueKeysEqual,
-  threadIssuesOf,
-} from "@t3tools/shared/threadIssues";
+import { threadIssueKeyOf } from "@t3tools/shared/threadIssues";
 import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
@@ -20,8 +16,6 @@ import {
   CircleDotIcon,
   CircleSlashIcon,
   LinkIcon,
-  MoreHorizontalIcon,
-  PlusIcon,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -29,27 +23,20 @@ import { useOpenLink } from "~/browser/useOpenLink";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { issueEnvironment } from "~/state/issues";
-import { useProject, useServerConfigs, useThreadShell } from "~/state/entities";
+import { useProject } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { PullRequestMarkdown } from "../pullRequest/PullRequestMarkdown";
-import {
-  PULL_REQUEST_ROW_CLASS,
-  PULL_REQUEST_ROW_NUMBER_CLASS,
-  PullRequestRowAuthor,
-  PullRequestRowLines,
-} from "../pullRequest/PullRequestListRow";
+import { PullRequestRowAuthor } from "../pullRequest/PullRequestListRow";
 import { PULL_REQUEST_STATE_PRESENTATION, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { PullRequestLabelChip } from "../pullRequest/pullRequestPresentation";
 import { PullRequestCommentBody } from "../pullRequest/PullRequestCommentBody";
 import { Button } from "../ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { LinkedItemRowActions, LinkedItemRowLines, LINKED_ITEM_ROW_CLASS } from "../LinkedItemRow";
+import { MenuItem } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { openLinkIssueDialog } from "./LinkIssueDialog";
 
 const SOURCE_LABELS: Record<ThreadIssueLink["source"], string> = {
   manual: "Linked by you",
@@ -112,78 +99,74 @@ function IssueRow({
   // Never read: say why rather than looking pending. Read before: keep the last state shown.
   const unreadable = snapshot === null && link.syncError !== undefined;
   return (
-    <div className={cn(PULL_REQUEST_ROW_CLASS, "relative px-2 hover:bg-accent/60")}>
-      {unreadable ? (
-        <CircleAlertIcon
-          aria-label="Could not read the issue"
-          className="size-4 shrink-0 text-destructive"
-        />
-      ) : (
-        <IssueStateGlyph state={snapshot?.state ?? null} closedReason={snapshot?.closedReason} />
-      )}
+    <div className={cn(LINKED_ITEM_ROW_CLASS, "pl-2")}>
+      <span className="mt-3.5 inline-flex shrink-0">
+        {unreadable ? (
+          <CircleAlertIcon
+            aria-label="Could not read the issue"
+            className="size-4 shrink-0 text-destructive"
+          />
+        ) : (
+          <IssueStateGlyph state={snapshot?.state ?? null} closedReason={snapshot?.closedReason} />
+        )}
+      </span>
       <button type="button" onClick={() => onSelect(link)} className="flex min-w-0 flex-1">
-        <PullRequestRowLines
-          number={
-            <Tooltip>
-              <TooltipTrigger render={<span className={PULL_REQUEST_ROW_NUMBER_CLASS} />}>
-                {link.displayKey}
-              </TooltipTrigger>
-              <TooltipPopup>
-                {SOURCE_LABELS[link.source]} · {formatRelativeTimeLabel(link.linkedAt)}
-                {link.syncError === undefined ? null : (
-                  <>
-                    <br />
-                    Last refresh failed: {link.syncError}
-                  </>
-                )}
-              </TooltipPopup>
-            </Tooltip>
+        <LinkedItemRowLines
+          reference={link.displayKey}
+          referenceTooltip={
+            <>
+              {SOURCE_LABELS[link.source]} · {formatRelativeTimeLabel(link.linkedAt)}
+              {link.syncError === undefined ? null : (
+                <>
+                  <br />
+                  Last refresh failed: {link.syncError}
+                </>
+              )}
+            </>
           }
+          updatedAt={snapshot?.updatedAt}
           title={
             snapshot?.title ??
             (link.syncError === undefined ? link.host : `Could not read: ${link.syncError}`)
           }
           meta={
-            snapshot?.author ? (
-              <PullRequestRowAuthor
-                actor={snapshot.author}
-                className="shrink-0"
-                labelClassName="max-w-28"
-              />
+            snapshot !== null && (snapshot.author || snapshot.labels.length > 0) ? (
+              <>
+                {snapshot.author ? (
+                  <PullRequestRowAuthor
+                    actor={snapshot.author}
+                    className="shrink-0"
+                    labelClassName="max-w-28"
+                  />
+                ) : null}
+                {snapshot.labels.map((label) => (
+                  <PullRequestLabelChip key={label.name} label={label} className="max-w-28" />
+                ))}
+              </>
             ) : null
           }
-          updatedAt={snapshot?.updatedAt}
         />
       </button>
-      <Menu>
-        <MenuTrigger
-          render={
-            <Button variant="ghost" size="icon-micro" aria-label={`Actions for ${link.displayKey}`}>
-              <MoreHorizontalIcon className="size-3.5" />
-            </Button>
-          }
-        />
-        <MenuPopup align="end" side="bottom">
-          <MenuItem onClick={() => void writeTextToClipboard(link.url, "link")}>
-            <LinkIcon className="size-3.5" />
-            Copy link
-          </MenuItem>
-          <MenuItem onClick={(event) => void openLink(link.url, { event })}>
-            <ArrowUpRightIcon className="size-3.5" />
-            Open
-          </MenuItem>
-          <MenuItem onClick={() => onUnlink(link)}>
-            <PullRequestGlyph.unlink className="size-3.5" />
-            Unlink from thread
-          </MenuItem>
-        </MenuPopup>
-      </Menu>
+      <LinkedItemRowActions label={`Actions for ${link.displayKey}`}>
+        <MenuItem onClick={() => void writeTextToClipboard(link.url, "link")}>
+          <LinkIcon className="size-3.5" />
+          Copy link
+        </MenuItem>
+        <MenuItem onClick={(event) => void openLink(link.url, { event })}>
+          <ArrowUpRightIcon className="size-3.5" />
+          Open
+        </MenuItem>
+        <MenuItem onClick={() => onUnlink(link)}>
+          <PullRequestGlyph.unlink className="size-3.5" />
+          Unlink from thread
+        </MenuItem>
+      </LinkedItemRowActions>
     </div>
   );
 }
 
 /** Read-only view of one linked issue: what the tracker says now, then its comments. */
-function IssueDetailView({
+export function ThreadIssueDetail({
   link,
   threadRef,
   projectId,
@@ -216,7 +199,7 @@ function IssueDetailView({
         <Button
           variant="ghost"
           size="icon-micro"
-          aria-label="Back to linked issues"
+          aria-label="Back to linked items"
           onClick={onBack}
         >
           <ArrowLeftIcon className="size-3.5" />
@@ -341,32 +324,17 @@ function IssueCommentsPage({
   );
 }
 
-export function ThreadIssuesPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
-  const configs = useServerConfigs();
-  if (configs.get(threadRef.environmentId)?.environment.capabilities.threadIssues !== true) {
-    return (
-      <Empty className="min-h-0 justify-center-safe">
-        <EmptyMedia variant="icon">
-          <CircleDotIcon />
-        </EmptyMedia>
-        <EmptyHeader>
-          <EmptyTitle>Linked issues unavailable</EmptyTitle>
-          <EmptyDescription>
-            This environment does not support linking issues. Update its T3 Code server.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-  return <EnabledThreadIssuesPanel threadRef={threadRef} />;
-}
-
-function EnabledThreadIssuesPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
-  const thread = useThreadShell(threadRef);
-  const [selected, setSelected] = useState<ThreadIssueLink | null>(null);
-  const openLinkDialog = useCallback(() => openLinkIssueDialog(threadRef), [threadRef]);
+/** The thread's linked issues as rows, for the Linked tab. Selecting one opens its detail. */
+export function ThreadIssueRows({
+  threadRef,
+  links,
+  onSelect,
+}: {
+  threadRef: ScopedThreadRef;
+  links: ReadonlyArray<ThreadIssueLink>;
+  onSelect: (link: ThreadIssueLink) => void;
+}) {
   const unlink = useAtomCommand(threadEnvironment.unlinkIssue, { reportFailure: true });
-  const links = useMemo(() => (thread === null ? [] : threadIssuesOf(thread)), [thread]);
   const handleUnlink = useCallback(
     (link: ThreadIssueLink) => {
       void unlink({
@@ -381,63 +349,14 @@ function EnabledThreadIssuesPanel({ threadRef }: { threadRef: ScopedThreadRef })
     },
     [threadRef, unlink],
   );
-  // Follow the live link, so an unlink from elsewhere closes the detail view.
-  const selectedLink =
-    selected === null ? null : (links.find((link) => threadIssueKeysEqual(link, selected)) ?? null);
 
-  if (selectedLink !== null && thread !== null) {
-    return (
-      <IssueDetailView
-        key={threadIssueKeyOf(selectedLink)}
-        link={selectedLink}
-        threadRef={threadRef}
-        projectId={thread.projectId}
-        onBack={() => setSelected(null)}
-      />
-    );
-  }
-
-  if (links.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <CircleDotIcon aria-hidden className="size-6 text-muted-foreground/60" />
-        <p className="text-sm font-medium">No linked issues</p>
-        <p className="max-w-60 text-xs text-muted-foreground">
-          Link the GitHub or GitLab issue this thread works on. The agent can read it too.
-        </p>
-        <Button size="sm" variant="outline" onClick={openLinkDialog}>
-          <PlusIcon className="size-3.5" />
-          Link issue
-        </Button>
-      </div>
-    );
-  }
-
-  const openCount = links.filter((link) => link.snapshot?.state === "open").length;
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col p-1.5">
-          {links.map((link) => (
-            <IssueRow
-              key={threadIssueKeyOf(link)}
-              link={link}
-              threadRef={threadRef}
-              onSelect={setSelected}
-              onUnlink={handleUnlink}
-            />
-          ))}
-        </div>
-      </ScrollArea>
-      <footer className="flex items-center justify-between border-t border-border/60 px-2 py-1.5 text-2xs text-muted-foreground">
-        <span>
-          {openCount} open · {links.length} linked
-        </span>
-        <Button size="xs" variant="ghost" onClick={openLinkDialog}>
-          <PlusIcon className="size-3.5" />
-          Link
-        </Button>
-      </footer>
-    </div>
-  );
+  return links.map((link) => (
+    <IssueRow
+      key={threadIssueKeyOf(link)}
+      link={link}
+      threadRef={threadRef}
+      onSelect={onSelect}
+      onUnlink={handleUnlink}
+    />
+  ));
 }

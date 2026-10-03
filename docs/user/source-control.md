@@ -163,7 +163,7 @@ does not show its diff, so marks are made and read on web and desktop.
 ## Linked pull requests
 
 A thread can hold several pull requests, including reviews from another repository on the same host.
-Use **Link pull request** in the command palette or **Linked pull requests** panel, or right-click a
+Use **Link pull request** in the command palette or **Linked items** panel, or right-click a
 pull request link in the conversation. Creating a pull request from Git actions links it automatically.
 Agents can link their pull requests with the `link_pull_request` tool.
 
@@ -172,10 +172,10 @@ on the Pull Requests page, **Link to thread** lets you search for an active thre
 also lists the threads that link to it, including archived threads, so you can return to their context.
 
 Thread badges show a stack's layer count or the current review number with a count of additional
-links. Clicking a badge with more than one review opens the **Linked pull requests** panel. On mobile, the Git overview lists linked reviews and their stacks; tap a review to open it.
+links. Clicking a badge with more than one review opens the **Linked items** panel. On mobile, the Git overview lists linked reviews and their stacks; tap a review to open it.
 Linking and unlinking are available in the web and desktop clients.
 
-The **Linked pull requests** panel lists every review and groups stacks. Unlink a review from its
+The **Linked items** panel lists every review and groups stacks. Unlink a review from its
 row menu. An unlinked stack layer stays out of later syncs. Open linked reviews refresh on the server;
 closed reviews refresh periodically so reopening one on the host is detected. Merged reviews refresh
 when requested. With **Auto-settle merged threads** enabled, a thread can settle after every linked
@@ -186,16 +186,18 @@ the thread is active, the server checks the pull request every minute and wakes 
 fails, the required checks pass, someone else comments or reviews, or the branch starts to conflict.
 Comments from your own account do not wake it. Watching ends when the pull request merges or closes,
 after 10 wakes in a row that bring only comments, or when the server cannot read the pull request for
-15 minutes. To start or stop it yourself, use the row menu in the **Linked pull requests** panel.
+15 minutes. To start or stop it yourself, use the row menu in the **Linked items** panel.
 
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
 
 ## Linked issues
 
-A thread can link GitHub and GitLab issues. Use **Link issue to thread** in the command palette or
-the **Issues** panel, and paste an issue URL, `owner/repo#42`, or `#42` for an issue in the
-project's own repository. Select a linked issue to read its description and comments without leaving
+A thread can link GitHub and GitLab issues. Use **Link issue to thread** in the command palette,
+**Link** in the **Linked items** panel, or right-click an issue link in the conversation. Paste an
+issue URL, `owner/repo#42`, or `#42` for an issue in the project's own repository. The panel's
+**Link** reads a pasted URL as a pull request or an issue on its own; for a bare number, pick which.
+Select a linked issue to read its description and comments without leaving
 the app. Unlink an issue from its row menu.
 
 Agents can link, unlink, and read issues with the `link_issue`, `unlink_issue`, `list_linked_issues`,

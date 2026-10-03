@@ -181,8 +181,7 @@ import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Checkbox } from "./ui/checkbox";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
-import { openLinkIssueDialog } from "./issues/LinkIssueDialog";
-import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
+import { openLinkThreadItemDialog } from "./LinkThreadItemDialog";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { searchSettings, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
@@ -1943,28 +1942,14 @@ function OpenCommandPaletteDialog(props: {
       title: "Link pull request to thread",
       icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
       run: async () => {
-        openLinkPullRequestDialog(threadRef);
+        openLinkThreadItemDialog(threadRef, "pull-request");
       },
     });
-    if (activeThreadServerConfig?.environment.capabilities.threadPullRequests === true) {
-      actionItems.push({
-        kind: "action",
-        value: "action:open-thread-pull-requests",
-        searchTerms: ["pull requests", "linked", "stack", "prs"],
-        title: "Show linked pull requests",
-        disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
-        icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
-        run: async () => {
-          useRightPanelStore.getState().open(threadRef, "pull-requests");
-        },
-      });
-    }
   }
 
-  if (
-    activeThread !== null &&
-    activeThreadServerConfig?.environment.capabilities.threadIssues === true
-  ) {
+  const supportsThreadIssues =
+    activeThreadServerConfig?.environment.capabilities.threadIssues === true;
+  if (activeThread !== null && supportsThreadIssues) {
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
     actionItems.push({
       kind: "action",
@@ -1973,17 +1958,28 @@ function OpenCommandPaletteDialog(props: {
       title: "Link issue to thread",
       icon: <CircleDotIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
-        openLinkIssueDialog(threadRef);
+        openLinkThreadItemDialog(threadRef, "issue");
       },
     });
+  }
+
+  if (
+    activeThread !== null &&
+    (supportsThreadIssues ||
+      activeThreadServerConfig?.environment.capabilities.threadPullRequests === true)
+  ) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
     actionItems.push({
       kind: "action",
-      value: "action:open-thread-issues",
-      searchTerms: ["issues", "linked", "tickets"],
-      title: "Show linked issues",
-      icon: <CircleDotIcon className={ITEM_ICON_CLASS} />,
+      value: "action:open-thread-links",
+      searchTerms: ["linked", "pull requests", "prs", "stack", "issues", "tickets"],
+      title: "Show linked items",
+      // With issue support the tab opens empty, since linking an issue starts there.
+      disabled:
+        !supportsThreadIssues && visibleThreadPullRequests(activeThread.pullRequests).length === 0,
+      icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
       run: async () => {
-        useRightPanelStore.getState().open(threadRef, "issues");
+        useRightPanelStore.getState().open(threadRef, "pull-requests");
       },
     });
   }

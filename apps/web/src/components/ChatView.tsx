@@ -269,10 +269,8 @@ import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
-import { LinkIssueDialogHost } from "./issues/LinkIssueDialog";
-import { ThreadIssuesPanel } from "./issues/ThreadIssuesPanel";
-import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
-import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
+import { LinkThreadItemDialogHost } from "./LinkThreadItemDialog";
+import { ThreadLinksPanel } from "./ThreadLinksPanel";
 import { useDeviceState } from "~/state/device";
 import { DeviceSetup } from "./device/DeviceSetup";
 import { Dialog } from "./ui/dialog";
@@ -5044,17 +5042,15 @@ export default function ChatView(props: ChatViewProps) {
   const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
+  // The linked tab holds pull requests and issues. With issue support it opens empty,
+  // since linking an issue starts there.
+  const linksSurfaceAvailable =
+    pullRequestsSurfaceAvailable ||
+    (isServerThread && serverConfig?.environment.capabilities.threadIssues === true);
   const addPullRequestsSurface = useCallback(() => {
-    if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
+    if (!activeThreadRef || !linksSurfaceAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
-  }, [activeThreadRef, pullRequestsSurfaceAvailable]);
-  // Unlike pull requests, the issues tab opens empty: linking starts there.
-  const issuesSurfaceAvailable =
-    isServerThread && serverConfig?.environment.capabilities.threadIssues === true;
-  const addIssuesSurface = useCallback(() => {
-    if (!activeThreadRef || !issuesSurfaceAvailable) return;
-    useRightPanelStore.getState().open(activeThreadRef, "issues");
-  }, [activeThreadRef, issuesSurfaceAvailable]);
+  }, [activeThreadRef, linksSurfaceAvailable]);
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
     activeThreadRef?.environmentId ?? null,
   );
@@ -10364,9 +10360,7 @@ export default function ChatView(props: ChatViewProps) {
         }
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
-      <ThreadPullRequestsPanel threadRef={activeThreadRef} />
-    ) : renderedRightPanelSurface?.kind === "issues" && activeThreadRef ? (
-      <ThreadIssuesPanel threadRef={activeThreadRef} />
+      <ThreadLinksPanel threadRef={activeThreadRef} />
     ) : renderedRightPanelSurface?.kind === "device" ? (
       <Suspense fallback={null}>
         <DevicePanel
@@ -11231,15 +11225,13 @@ export default function ChatView(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddPullRequests={addPullRequestsSurface}
-          onAddIssues={addIssuesSurface}
           onAddDevice={addDeviceSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
-          pullRequestsAvailable={pullRequestsSurfaceAvailable}
-          issuesAvailable={issuesSurfaceAvailable}
+          pullRequestsAvailable={linksSurfaceAvailable}
           deviceAvailable={activeThreadRef !== null}
         >
           {rightPanelContent}
@@ -11288,15 +11280,13 @@ export default function ChatView(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddPullRequests={addPullRequestsSurface}
-            onAddIssues={addIssuesSurface}
             onAddDevice={addDeviceSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
-            pullRequestsAvailable={pullRequestsSurfaceAvailable}
-            issuesAvailable={issuesSurfaceAvailable}
+            pullRequestsAvailable={linksSurfaceAvailable}
             deviceAvailable={activeThreadRef !== null}
           >
             {rightPanelContent}
@@ -11342,8 +11332,7 @@ export default function ChatView(props: ChatViewProps) {
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
-      <LinkPullRequestDialogHost />
-      <LinkIssueDialogHost />
+      <LinkThreadItemDialogHost />
       {expandedImage && (
         <ExpandedImageDialog
           key={expandedImageKey(expandedImage)}
