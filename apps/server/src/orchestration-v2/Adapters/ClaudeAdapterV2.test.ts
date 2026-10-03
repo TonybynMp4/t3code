@@ -12,6 +12,7 @@ import {
   ChatAttachmentId,
   ChatFileAttachment,
   ChatImageAttachment,
+  CheckpointId,
   ClaudeSettings,
   EnvironmentId,
   MessageId,
@@ -3442,7 +3443,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   it.effect("projects Claude 5 task tools as a todo list", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const harness = yield* makeWakeHarness;
+        const harness = yield* makeWakeHarnessWithOptions({
+          freshQueueOnReopen: true,
+          close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        });
         const now = yield* DateTime.now;
         const assistantTool = (uuid: string, tool: Record<string, unknown>) =>
           claudeSdkFrame({
@@ -3603,6 +3607,50 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ["Inspect", "completed"],
           ["Ship", "pending"],
         ]);
+
+        // A rollback drops the list, so the next task is not shown beside stale ones.
+        const rolledBack = yield* harness.runtime.rollbackThread({
+          providerThread: harness.providerThread,
+          target: {
+            type: "thread_start",
+            checkpointId: CheckpointId.make("checkpoint-claude-task-tools"),
+            appRunOrdinal: 0,
+          },
+          providerThreadTurns: [],
+        });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: rolledBack.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-task-tools-3"),
+            text: "Start over.",
+            attachments: [],
+          }),
+        );
+        for (const frame of [
+          assistantTool("00000000-0000-4000-8000-000000000621", {
+            id: "tool-task-create-3",
+            name: "TaskCreate",
+            input: { subject: "Retry", description: "Retry" },
+          }),
+          toolResult(
+            "00000000-0000-4000-8000-000000000622",
+            "tool-task-create-3",
+            "Task #1 created successfully: Retry",
+            { task: { id: "1", subject: "Retry" } },
+          ),
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000623",
+            result: "Retrying.",
+          }),
+        ]) {
+          // The rollback closed the first CLI process; the turn runs on a new one.
+          yield* Queue.offer(harness.processQueues[1]!, frame);
+        }
+        yield* Queue.take(harness.terminalReceipts);
+
+        assert.deepEqual(stepsOf([...todoPlans().values()].at(-1)), [["Retry", "pending"]]);
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     ),
   );
