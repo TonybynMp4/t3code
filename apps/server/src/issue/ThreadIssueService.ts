@@ -13,7 +13,6 @@ import {
 } from "@t3tools/contracts";
 import {
   type GitIssueLink,
-  projectIssueDefaults,
   resolveIssueReference,
   threadIssueKeysEqual,
   threadIssuesOf,
@@ -101,7 +100,7 @@ const make = Effect.gen(function* () {
     );
     const issue = resolveIssueReference(
       reference,
-      projectIssueDefaults(project?.repositoryIdentity),
+      project === undefined ? null : yield* issues.projectDefaults(project),
     );
     if (issue === null) return yield* new IssueReferenceInvalidError({});
     return { thread, issue };

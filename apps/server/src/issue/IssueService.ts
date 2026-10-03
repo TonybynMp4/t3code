@@ -7,13 +7,16 @@ import {
   IssueReadError,
   IssueUnavailableError,
   type PullRequestActor,
+  type RepositoryIdentity,
 } from "@t3tools/contracts";
+import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 import {
   type GitIssueTracker,
   gitIssueLink,
   normalizeThreadIssueKey,
   parseGitIssueId,
   projectIssueDefaults,
+  type ProjectIssueDefaults,
 } from "@t3tools/shared/threadIssues";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -30,6 +33,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import { decodeNotesJson } from "../pullRequest/gitLabMergeRequestJson.ts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
+import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 
 const READ_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 1_000_000;
@@ -45,6 +49,15 @@ const PUBLIC_HOSTS: Record<GitIssueTracker, string> = {
 
 /** Compared by value, so equal references share one cached read. */
 class IssueCacheKey extends Data.Class<IssueRef> {}
+
+class TrackerRefinementKey extends Data.Class<{
+  readonly cwd: string;
+  readonly remoteName: string;
+  readonly remoteUrl: string;
+}> {}
+
+/** What the CLIs say about a self-hosted remote only changes when someone logs in or out. */
+const TRACKER_REFINEMENT_TTL = Duration.minutes(5);
 
 const GitHubUser = Schema.NullOr(
   Schema.Struct({
@@ -176,6 +189,15 @@ export class IssueService extends Context.Service<
     readonly listComments: (
       input: IssueCommentsInput,
     ) => Effect.Effect<IssueCommentPage, IssueUnavailableError | IssueReadError>;
+    /**
+     * Where a bare `#42` points for a project, and the one self-hosted host its issues may be
+     * read from. A remote whose host name does not say GitHub or GitLab is asked of `gh` and
+     * `glab`, the way the pull request list does, so a self-hosted GitLab still has a tracker.
+     */
+    readonly projectDefaults: (project: {
+      readonly workspaceRoot: string;
+      readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
+    }) => Effect.Effect<ProjectIssueDefaults | null>;
   }
 >()("t3/issue/IssueService") {}
 
@@ -183,6 +205,44 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const github = yield* GitHubCli.GitHubCli;
   const gitlab = yield* GitLabCli.GitLabCli;
+  const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+
+  const refinedTrackers = yield* Cache.makeWith(
+    (key: TrackerRefinementKey) => {
+      const provider = detectSourceControlProviderFromRemoteUrl(key.remoteUrl);
+      if (provider === null) return Effect.succeed(null);
+      return sourceControlProviders
+        .resolveHandle({
+          cwd: key.cwd,
+          context: { provider, remoteName: key.remoteName, remoteUrl: key.remoteUrl },
+        })
+        .pipe(
+          Effect.map((handle): GitIssueTracker | null => {
+            const kind = handle.context?.provider.kind;
+            return kind === "github" || kind === "gitlab" ? kind : null;
+          }),
+          Effect.orElseSucceed(() => null),
+        );
+    },
+    { capacity: 256, timeToLive: () => TRACKER_REFINEMENT_TTL },
+  );
+
+  const projectDefaults: IssueService["Service"]["projectDefaults"] = Effect.fn(
+    "IssueService.projectDefaults",
+  )(function* (project) {
+    const identity = project.repositoryIdentity;
+    const known = projectIssueDefaults(identity);
+    if (known !== null || !identity || (identity.provider ?? "unknown") !== "unknown") return known;
+    const tracker = yield* Cache.get(
+      refinedTrackers,
+      new TrackerRefinementKey({
+        cwd: project.workspaceRoot,
+        remoteName: identity.locator.remoteName,
+        remoteUrl: identity.locator.remoteUrl,
+      }),
+    );
+    return tracker === null ? null : projectIssueDefaults({ ...identity, provider: tracker });
+  });
 
   const resolve = Effect.fn("IssueService.resolve")(function* (ref: IssueRef) {
     const key = normalizeThreadIssueKey(ref);
@@ -208,8 +268,8 @@ const make = Effect.gen(function* () {
       return yield* new IssueReadError({ detail: "The project does not exist." });
     }
     // The CLI sends its credentials to the host it is pointed at, so only known hosts are read.
-    const projectDefaults = projectIssueDefaults(project.value.repositoryIdentity);
-    const projectHost = projectDefaults?.tracker === tracker ? projectDefaults.host : null;
+    const defaults = yield* projectDefaults(project.value);
+    const projectHost = defaults?.tracker === tracker ? defaults.host : null;
     if (key.host !== PUBLIC_HOSTS[tracker] && key.host !== projectHost) {
       return yield* new IssueReadError({
         detail: `Issues on ${key.host} can only be read from a project hosted there.`,
@@ -416,7 +476,7 @@ const make = Effect.gen(function* () {
     return { comments, nextCursor: fullPage ? String(page + 1) : null } satisfies IssueCommentPage;
   });
 
-  return IssueService.of({ getIssue, listComments });
+  return IssueService.of({ getIssue, listComments, projectDefaults });
 });
 
 export const layer = Layer.effect(IssueService, make);

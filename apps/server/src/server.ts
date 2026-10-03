@@ -332,7 +332,14 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
 
 // Shared by the WebSocket, MCP tools, and the sync reactor so their reads share one cache.
 const IssueServiceLive = IssueService.layer.pipe(
-  Layer.provide(Layer.mergeAll(GitHubCli.layer, GitLabCli.layer, ProjectServiceLayerLive)),
+  Layer.provide(
+    Layer.mergeAll(
+      GitHubCli.layer,
+      GitLabCli.layer,
+      ProjectServiceLayerLive,
+      SourceControlProviderRegistryLayerLive,
+    ),
+  ),
 );
 
 const GitManagerLayerLive = GitManager.layer.pipe(
