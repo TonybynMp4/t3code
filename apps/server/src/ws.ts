@@ -2794,6 +2794,10 @@ const makeWsRpcLayer = (
             threadIssues.link({ ...input, source: "manual" }),
             { "rpc.aggregate": "issues" },
           ),
+        [WS_METHODS.issuesPreview]: (input) =>
+          observeRpcEffect(WS_METHODS.issuesPreview, threadIssues.preview(input), {
+            "rpc.aggregate": "issues",
+          }),
         [WS_METHODS.pullRequestsPreview]: (input) =>
           observeRpcEffect(
             WS_METHODS.pullRequestsPreview,

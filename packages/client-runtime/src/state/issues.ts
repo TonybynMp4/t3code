@@ -30,6 +30,13 @@ export function createIssueEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
       idleTtlMs: 5 * 60_000,
     }),
+    /** What a reference names for a thread, read before linking it. */
+    preview: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:preview",
+      tag: WS_METHODS.issuesPreview,
+      staleTimeMs: 60_000,
+      idleTtlMs: 60_000,
+    }),
     link: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:link",
       tag: WS_METHODS.issuesLink,

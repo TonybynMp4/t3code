@@ -2,6 +2,7 @@ import {
   CommandId,
   type IssueLinkResult,
   IssueLinkFailedError,
+  type IssuePreviewResult,
   type IssueReadError,
   IssueReferenceInvalidError,
   IssueThreadNotFoundError,
@@ -10,6 +11,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ThreadId,
   type ThreadIssueLinkSource,
+  type IssueUnavailableError,
 } from "@t3tools/contracts";
 import {
   type GitIssueLink,
@@ -57,6 +59,11 @@ export class ThreadIssueService extends Context.Service<
       readonly reference: string;
       readonly source: ThreadIssueLinkSource;
     }) => Effect.Effect<IssueLinkResult, ResolveError | IssueReadError | IssueLinkFailedError>;
+    /** The issue a reference names for the thread, read from its tracker, for the link dialog. */
+    readonly preview: (input: {
+      readonly threadId: ThreadId;
+      readonly reference: string;
+    }) => Effect.Effect<IssuePreviewResult, ResolveError | IssueUnavailableError | IssueReadError>;
     readonly unlink: (input: {
       readonly threadId: ThreadId;
       readonly reference: string;
@@ -141,6 +148,20 @@ const make = Effect.gen(function* () {
     return { ...identity, alreadyLinked: false };
   });
 
+  const preview = Effect.fn("ThreadIssueService.preview")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly reference: string;
+  }) {
+    const { thread, issue } = yield* resolve(input.threadId, input.reference);
+    const detail = yield* issues.getIssue({ projectId: thread.projectId, ...issue });
+    return {
+      issue: detail,
+      alreadyLinked: threadIssuesOf(thread).some((existing) =>
+        threadIssueKeysEqual(existing, issue),
+      ),
+    };
+  });
+
   const unlink = Effect.fn("ThreadIssueService.unlink")(function* (input: {
     readonly threadId: ThreadId;
     readonly reference: string;
@@ -166,7 +187,7 @@ const make = Effect.gen(function* () {
     return { issue, wasLinked: true };
   });
 
-  return ThreadIssueService.of({ resolve, link, unlink });
+  return ThreadIssueService.of({ resolve, link, preview, unlink });
 });
 
 export const layer = Layer.effect(ThreadIssueService, make);

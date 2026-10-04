@@ -9,18 +9,23 @@ import {
   parseIssueUrl,
   projectIssueDefaults,
   resolveIssueReference,
-  threadIssueKeysEqual,
-  threadIssuesOf,
 } from "@t3tools/shared/threadIssues";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useIssueLinking } from "~/hooks/useIssueLinking";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
-import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
+import { findProjectOnChangeRequestHost, parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useProjects, useThreadShell } from "~/state/entities";
+import { issueEnvironment } from "~/state/issues";
+import { pullRequestEnvironment } from "~/state/pullRequests";
+import { useDebouncedValue } from "~/state/queries";
+import { useEnvironmentQuery } from "~/state/query";
+import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { IssueStateGlyph } from "./issues/ThreadIssueRows";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { resolveLinkPullRequestInput } from "./pullRequest/LinkPullRequestDialog";
 import { Button } from "./ui/button";
 import {
@@ -36,6 +41,42 @@ import { Input } from "./ui/input";
 import { Toggle, ToggleGroup } from "./ui/toggle-group";
 
 export type LinkThreadItemKind = "pull-request" | "issue";
+
+/** Long enough to skip the reads for a number still being typed. */
+const LOOKUP_DELAY_MS = 300;
+
+interface LinkTargetPreviewView {
+  readonly glyph: ReactNode;
+  readonly reference: string;
+  readonly stateLabel: string;
+  readonly title: string;
+  readonly author: string;
+  readonly createdAt: string;
+  readonly alreadyLinked: boolean;
+}
+
+/** The item the input names, as its host reports it, so the user links what they meant. */
+function LinkTargetPreview({ preview, noun }: { preview: LinkTargetPreviewView; noun: string }) {
+  return (
+    <div className="flex min-w-0 items-start gap-2.5 rounded-lg border border-border/70 px-3 py-2.5">
+      <span className="mt-0.5">{preview.glyph}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
+          <span className="min-w-0 truncate font-mono">{preview.reference}</span>
+          <span aria-hidden>·</span>
+          <span className="shrink-0">{preview.stateLabel}</span>
+          {preview.alreadyLinked ? (
+            <span className="ml-auto shrink-0">This {noun} is already linked</span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 line-clamp-2 text-sm font-medium leading-snug">{preview.title}</p>
+        <p className="mt-1 truncate text-xs text-muted-foreground">
+          {preview.author} · opened {formatRelativeTimeLabel(preview.createdAt)}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Which thread has the link dialog open, and which kind it starts on. Set by whichever entry
@@ -150,7 +191,7 @@ function LinkThreadItemDialog({
   const kind = detectedKind ?? chosenKind;
   const kindSupported = kind === "pull-request" ? supportsPullRequests : supportsIssues;
 
-  const resolved = useMemo((): { reference: string; label: string } | { error: string } | null => {
+  const resolved = useMemo((): { reference: string } | { error: string } | null => {
     if (kind === "pull-request") {
       const result = resolveLinkPullRequestInput({
         reference,
@@ -158,12 +199,7 @@ function LinkThreadItemDialog({
         hasProject: (link) => pullRequestLinking.canLink(link.url),
       });
       if (result === null || "error" in result) return result;
-      if (pullRequestLinking.isLinked(thread, result.link.url))
-        return { error: "This pull request is already linked." };
-      return {
-        reference: result.link.url,
-        label: `${result.link.host}/${result.link.repository} #${result.link.number}`,
-      };
+      return { reference: result.link.url };
     }
     const issue = resolveIssueReference(reference, issueDefaults);
     if (issue === null) {
@@ -175,16 +211,9 @@ function LinkThreadItemDialog({
         (repositoryIdentity?.provider ?? "unknown") === "unknown" &&
         repositoryIdentity?.locator !== undefined &&
         (/^#?[1-9]\d*$/u.test(trimmed) || parseGitIssueId(trimmed)?.repository.includes("/"));
-      return serverResolvable
-        ? { reference: trimmed, label: `${trimmed} in this project's tracker` }
-        : null;
+      return serverResolvable ? { reference: trimmed } : null;
     }
-    if (
-      thread !== null &&
-      threadIssuesOf(thread).some((entry) => threadIssueKeysEqual(entry, issue))
-    )
-      return { error: "This issue is already linked." };
-    return { reference: issue.url, label: `${issue.host}/${issue.displayKey}` };
+    return { reference: issue.url };
   }, [
     issueDefaults,
     kind,
@@ -192,8 +221,79 @@ function LinkThreadItemDialog({
     pullRequestLinking,
     reference,
     repositoryIdentity,
-    thread,
   ]);
+
+  // Looked up once typing pauses, so each keystroke does not cost a tracker read.
+  const target = resolved !== null && "reference" in resolved ? resolved.reference : null;
+  const lookupKey = target === null ? null : `${kind} ${target}`;
+  const settledKey = useDebouncedValue(lookupKey, LOOKUP_DELAY_MS);
+  const lookup = settledKey !== null && settledKey === lookupKey ? target : null;
+  const pullRequestTarget = useMemo(() => {
+    const link = kind === "pull-request" && lookup !== null ? parseChangeRequestUrl(lookup) : null;
+    if (link === null) return null;
+    const project = findProjectOnChangeRequestHost(
+      projects.filter((candidate) => candidate.environmentId === threadRef.environmentId),
+      link,
+    );
+    return project === undefined
+      ? null
+      : {
+          environmentId: threadRef.environmentId,
+          input: {
+            projectId: project.id,
+            host: link.host,
+            repository: link.repository,
+            number: link.number,
+          },
+        };
+  }, [kind, lookup, projects, threadRef.environmentId]);
+  const pullRequestPreview = useEnvironmentQuery(
+    pullRequestTarget === null ? null : pullRequestEnvironment.preview(pullRequestTarget),
+  );
+  const issuePreview = useEnvironmentQuery(
+    kind === "issue" && lookup !== null
+      ? issueEnvironment.preview({
+          environmentId: threadRef.environmentId,
+          input: { threadId: threadRef.threadId, reference: lookup },
+        })
+      : null,
+  );
+  const preview = useMemo((): LinkTargetPreviewView | null => {
+    if (kind === "pull-request") {
+      const data = pullRequestPreview.data;
+      if (data === null || lookup === null) return null;
+      const state = resolvePullRequestState({ state: data.state, isDraft: data.isDraft });
+      return {
+        glyph: <state.Icon aria-hidden className={`size-4 shrink-0 ${state.toneClassName}`} />,
+        reference: `${data.repository}#${data.number}`,
+        stateLabel: state.label,
+        title: data.title,
+        author: data.author?.login ?? "ghost",
+        createdAt: data.createdAt,
+        alreadyLinked: pullRequestLinking.isLinked(thread, lookup),
+      };
+    }
+    const data = issuePreview.data;
+    if (data === null) return null;
+    const { issue } = data;
+    return {
+      glyph: <IssueStateGlyph state={issue.state} closedReason={issue.closedReason} />,
+      reference: issue.displayKey,
+      stateLabel:
+        issue.state === "open"
+          ? "Open"
+          : issue.closedReason === "not-planned"
+            ? "Closed as not planned"
+            : "Closed",
+      title: issue.title,
+      author: issue.author?.login ?? "ghost",
+      createdAt: issue.createdAt,
+      alreadyLinked: data.alreadyLinked,
+    };
+  }, [issuePreview.data, kind, lookup, pullRequestLinking, pullRequestPreview.data, thread]);
+  const previewQuery = kind === "pull-request" ? pullRequestPreview : issuePreview;
+  const previewError = lookup === null ? null : previewQuery.error;
+  const lookingUp = target !== null && preview === null && previewError === null;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
@@ -204,7 +304,13 @@ function LinkThreadItemDialog({
   // back as an error here instead of a link that never syncs.
   const submit = useCallback(async () => {
     setDirty(true);
-    if (!kindSupported || resolved === null || "error" in resolved) return;
+    if (
+      !kindSupported ||
+      resolved === null ||
+      "error" in resolved ||
+      preview?.alreadyLinked === true
+    )
+      return;
     setSubmitError(null);
     setPending(true);
     try {
@@ -224,7 +330,16 @@ function LinkThreadItemDialog({
       setPending(false);
     }
     onClose();
-  }, [issueLinking, kind, kindSupported, onClose, pullRequestLinking, resolved, threadRef]);
+  }, [
+    issueLinking,
+    kind,
+    kindSupported,
+    onClose,
+    preview,
+    pullRequestLinking,
+    resolved,
+    threadRef,
+  ]);
 
   const noun = kind === "pull-request" ? "pull request" : "issue";
   const validation = !kindSupported
@@ -241,7 +356,7 @@ function LinkThreadItemDialog({
               : "Use a pull request URL, 123, or #123."
           : "error" in resolved
             ? resolved.error
-            : null;
+            : previewError;
   const bothKinds = supportsPullRequests && supportsIssues;
 
   return (
@@ -299,8 +414,10 @@ function LinkThreadItemDialog({
               </ToggleGroup>
             ) : null}
           </div>
-          {resolved !== null && "reference" in resolved ? (
-            <p className="truncate text-muted-foreground text-xs">{resolved.label}</p>
+          {preview !== null ? (
+            <LinkTargetPreview preview={preview} noun={noun} />
+          ) : lookingUp ? (
+            <p className="text-muted-foreground text-xs">Looking up the {noun}...</p>
           ) : null}
           {(validation ?? submitError) ? (
             <p className="text-destructive text-xs">{validation ?? submitError}</p>
@@ -314,7 +431,13 @@ function LinkThreadItemDialog({
             type="button"
             size="sm"
             onClick={() => void submit()}
-            disabled={pending || !kindSupported || resolved === null || "error" in resolved}
+            disabled={
+              pending ||
+              !kindSupported ||
+              resolved === null ||
+              "error" in resolved ||
+              preview?.alreadyLinked === true
+            }
           >
             {pending ? "Linking..." : "Link"}
           </Button>

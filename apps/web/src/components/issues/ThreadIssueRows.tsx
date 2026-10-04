@@ -43,7 +43,7 @@ const SOURCE_LABELS: Record<ThreadIssueLink["source"], string> = {
   agent: "Linked by the agent",
 };
 
-function IssueStateGlyph({
+export function IssueStateGlyph({
   state,
   closedReason,
 }: {

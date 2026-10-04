@@ -127,6 +127,14 @@ export const IssueLinkResult = Schema.Struct({
 });
 export type IssueLinkResult = typeof IssueLinkResult.Type;
 
+/** What the link dialog shows before linking: the issue as its tracker reports it. */
+export const IssuePreviewResult = Schema.Struct({
+  issue: IssueDetail,
+  /** True when the thread already links this issue. */
+  alreadyLinked: Schema.Boolean,
+});
+export type IssuePreviewResult = typeof IssuePreviewResult.Type;
+
 export class IssueReferenceInvalidError extends Schema.TaggedError<IssueReferenceInvalidError>()(
   "IssueReferenceInvalidError",
   {},

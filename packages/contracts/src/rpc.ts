@@ -13,6 +13,7 @@ import {
   IssueLinkFailedError,
   IssueLinkInput,
   IssueLinkResult,
+  IssuePreviewResult,
   IssueReadError,
   IssueReferenceInvalidError,
   IssueRef,
@@ -504,6 +505,7 @@ export const WS_METHODS = {
   issuesDetail: "issues.detail",
   issuesComments: "issues.comments",
   issuesLink: "issues.link",
+  issuesPreview: "issues.preview",
   pullRequestsPreview: "pullRequests.preview",
   pullRequestsChecks: "pullRequests.checks",
   pullRequestsActivity: "pullRequests.activity",
@@ -977,6 +979,19 @@ const WsIssuesLinkRpc = Rpc.make(WS_METHODS.issuesLink, {
     IssueThreadReadError,
     IssueReadError,
     IssueLinkFailedError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
+const WsIssuesPreviewRpc = Rpc.make(WS_METHODS.issuesPreview, {
+  payload: IssueLinkInput,
+  success: IssuePreviewResult,
+  error: Schema.Union([
+    IssueReferenceInvalidError,
+    IssueThreadNotFoundError,
+    IssueThreadReadError,
+    IssueUnavailableError,
+    IssueReadError,
     EnvironmentAuthorizationError,
   ]),
 });
@@ -1800,6 +1815,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssuesDetailRpc,
   WsIssuesCommentsRpc,
   WsIssuesLinkRpc,
+  WsIssuesPreviewRpc,
   WsPullRequestsPreviewRpc,
   WsPullRequestsChecksRpc,
   WsPullRequestsActivityRpc,

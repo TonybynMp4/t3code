@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import type { Tool } from "effect/unstable/ai";
 
 import * as IssueService from "../../../issue/IssueService.ts";
+import { projectIssueDefaults } from "@t3tools/shared/threadIssues";
 import * as ThreadIssueService from "../../../issue/ThreadIssueService.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import { v2PullRequestThread } from "../../../orchestration-v2/testkit/pullRequestFixtures.ts";
@@ -120,6 +121,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
     }),
     Layer.mock(IssueService.IssueService)({
       getIssue: options.getIssue ?? (() => Effect.succeed(detail)),
+      projectDefaults: (target) => Effect.succeed(projectIssueDefaults(target.repositoryIdentity)),
       listComments: () =>
         Effect.succeed({
           comments: [
@@ -160,7 +162,10 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
       }),
       Effect.provide(dependencies),
     );
-  return { commands, call };
+  const threadIssues = yield* ThreadIssueService.ThreadIssueService.pipe(
+    Effect.provide(dependencies),
+  );
+  return { commands, call, threadIssues };
 });
 
 describe("issue toolkit handlers", () => {
@@ -218,6 +223,20 @@ describe("issue toolkit handlers", () => {
       });
       yield* offline.call("link_issue", { issue: "#9" });
       expect((yield* Ref.get(offline.commands)).length).toBe(1);
+    }),
+  );
+
+  it.effect("previews what a reference names for the link dialog, and whether it is linked", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const fresh = yield* harness.threadIssues.preview({ threadId: THREAD_ID, reference: "#9" });
+      expect(fresh).toEqual({ issue: detail, alreadyLinked: false });
+      const linkedAlready = yield* harness.threadIssues.preview({
+        threadId: THREAD_ID,
+        reference: "#5",
+      });
+      expect(linkedAlready.alreadyLinked).toBe(true);
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
     }),
   );
 
