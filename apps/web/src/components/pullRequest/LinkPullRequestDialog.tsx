@@ -1,9 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-    pullRequestHostOf,
-    type PullRequestPreview,
-    type ScopedThreadRef,
-    type SourceControlProviderKind,
+  pullRequestHostOf,
+  type PullRequestPreview,
+  type ScopedThreadRef,
+  type SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,13 +21,13 @@ import { useEnvironmentQuery } from "~/state/query";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { Button } from "../ui/button";
 import {
-    Dialog,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogPanel,
-    DialogPopup,
-    DialogTitle,
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { resolvePullRequestState } from "./pullRequestPresentation";
@@ -207,7 +207,7 @@ function LinkPullRequestDialog({
   );
   const preview = lookup === null ? null : previewQuery.data;
   const previewError = lookup === null ? null : previewQuery.error;
-  const alreadyLinked = lookup !== null && linking.isLinked(thread ?? null, lookup.url);
+  const alreadyLinked = target !== null && linking.isLinked(thread ?? null, target.url);
   const lookingUp = target !== null && preview === null && previewError === null;
 
   const submit = useCallback(async () => {
