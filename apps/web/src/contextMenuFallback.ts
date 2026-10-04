@@ -155,6 +155,7 @@ function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSV
       ? "size-4.5 shrink-0 sm:size-4"
       : "size-4.5 shrink-0 text-muted-foreground sm:size-4",
   );
+  svg.setAttribute("aria-hidden", "true");
   for (const node of paths) {
     const child = document.createElementNS(SVG_NS, node.tag);
     for (const [key, value] of Object.entries(node.attrs)) {
@@ -239,6 +240,9 @@ export function showContextMenuFallback<T extends string>(
     // fires mouseenter on whatever item lands beneath it. Hover is ignored
     // after a keyboard move until the pointer really moves again.
     let isKeyboardDriven = false;
+    // The first item takes focus on open so screen readers announce it, but
+    // its highlight stays hidden after a right-click until a key or hover.
+    let isFocusRevealed = false;
     let lastPointer: { x: number; y: number } | null = null;
     const onMouseMove = (event: MouseEvent) => {
       if (lastPointer?.x !== event.clientX || lastPointer?.y !== event.clientY) {
@@ -295,6 +299,15 @@ export function showContextMenuFallback<T extends string>(
       }
       const items = enabledItems(menu);
       const focusedIndex = items.findIndex((item) => item === document.activeElement);
+      // The first ArrowDown on a quiet open reveals the focused first item
+      // rather than skipping past it.
+      if (!isFocusRevealed && event.key === "ArrowDown" && focusedIndex !== -1) {
+        event.preventDefault();
+        isKeyboardDriven = true;
+        isFocusRevealed = true;
+        refreshHighlights();
+        return;
+      }
       const focusItem = (index: number) => {
         const item = items[(index + items.length) % items.length];
         item?.focus({ preventScroll: true });
@@ -342,6 +355,7 @@ export function showContextMenuFallback<T extends string>(
       }
       event.preventDefault();
       isKeyboardDriven = true;
+      isFocusRevealed = true;
       refreshHighlights();
     };
 
@@ -386,6 +400,9 @@ export function showContextMenuFallback<T extends string>(
       menu.style.top = `${preferredTop}px`;
       menu.dataset.level = String(level);
       menu.setAttribute("role", "menu");
+      if (parentTrigger?.dataset.label) {
+        menu.setAttribute("aria-label", parentTrigger.dataset.label);
+      }
       menu.tabIndex = -1;
 
       const inner = document.createElement("div");
@@ -422,6 +439,7 @@ export function showContextMenuFallback<T extends string>(
         button.setAttribute("role", "menuitem");
         // Arrow keys move between items; Tab leaves the menu instead.
         button.tabIndex = -1;
+        button.dataset.label = item.label;
         const isDisabled = item.disabled === true;
         button.disabled = isDisabled;
         const rowBase =
@@ -469,6 +487,17 @@ export function showContextMenuFallback<T extends string>(
         label.textContent = item.label;
         button.appendChild(label);
 
+        if (item.detail) {
+          // The comma gives screen readers a pause between label and detail.
+          button.setAttribute("aria-label", `${item.label}, ${item.detail}`);
+          const detail = document.createElement("span");
+          detail.className = "ms-auto shrink-0 ps-4 text-muted-foreground text-xs";
+          detail.style.cssText =
+            "margin-inline-start:auto;flex-shrink:0;padding-inline-start:1rem;color:var(--contrast-muted-foreground);font-size:0.75rem;";
+          detail.textContent = item.detail;
+          button.appendChild(detail);
+        }
+
         if (hasChildren) {
           button.setAttribute("aria-haspopup", "menu");
           button.setAttribute("aria-expanded", "false");
@@ -489,7 +518,8 @@ export function showContextMenuFallback<T extends string>(
           // An open submenu keeps its trigger highlighted, like native menus.
           const updateHighlight = () => {
             const isHighlighted =
-              document.activeElement === button || button.getAttribute("aria-expanded") === "true";
+              (isFocusRevealed && document.activeElement === button) ||
+              button.getAttribute("aria-expanded") === "true";
             button.style.background = isHighlighted
               ? isLeafDestructive
                 ? "color-mix(in srgb, var(--destructive) 10%, transparent)"
@@ -505,6 +535,7 @@ export function showContextMenuFallback<T extends string>(
           };
           button.addEventListener("mouseenter", () => {
             if (isKeyboardDriven) return;
+            isFocusRevealed = true;
             button.focus({ preventScroll: true });
             refreshHighlights();
           });
@@ -530,6 +561,7 @@ export function showContextMenuFallback<T extends string>(
                 clampMenuPosition(childMenu, rect.left - childRect.width - 4, rect.top);
               }
               if (focusFirstItem) {
+                isFocusRevealed = true;
                 [...childMenu.querySelectorAll<HTMLButtonElement>("button")]
                   .find((childButton) => !childButton.disabled)
                   ?.focus();
@@ -564,11 +596,15 @@ export function showContextMenuFallback<T extends string>(
       document.body.appendChild(menu);
       menuStack[level] = menu;
       submenuTriggerStack[level] = parentTrigger;
-      // Focus the menu itself, not its first item, so a pointer-opened menu
-      // shows no highlight while screen readers and the arrow keys still land
-      // inside it.
       if (level === 0) {
-        menu.focus({ preventScroll: true });
+        const firstItem = enabledItems(menu)[0];
+        (firstItem ?? menu).focus({ preventScroll: true });
+        // Browsers mark focus moved during a keyboard event (Shift+F10, the
+        // Menu key) as focus-visible, but not focus moved by a right-click.
+        if (firstItem?.matches?.(":focus-visible")) {
+          isFocusRevealed = true;
+          refreshHighlights();
+        }
       }
 
       requestAnimationFrame(() => {

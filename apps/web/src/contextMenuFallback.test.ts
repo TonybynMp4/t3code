@@ -356,18 +356,20 @@ describe("showContextMenuFallback", () => {
 });
 
 describe("showContextMenuFallback keyboard", () => {
-  it("focuses the menu and moves between enabled items with the arrow keys", async () => {
+  it("focuses the first item and moves between enabled items with the arrow keys", async () => {
     const selectionPromise = showContextMenuFallback([
       { id: "rename", label: "Rename" },
       { id: "pin", label: "Pin", disabled: true },
       { id: "archive", label: "Archive" },
     ]);
-    const menu = (document as unknown as FakeDocument).activeElement;
-    expect(menu?.attributes.get("role")).toBe("menu");
+    // The first item takes focus quietly so a right-click shows no highlight.
+    expect(focusedLabel()).toBe("Rename");
     expect(findButton("Rename")?.attributes.get("role")).toBe("menuitem");
+    expect(findButton("Rename")?.style.background).toBe("transparent");
 
     expect(pressKey("ArrowDown").defaultPrevented).toBe(true);
     expect(focusedLabel()).toBe("Rename");
+    expect(findButton("Rename")?.style.background).toBe("var(--accent)");
     pressKey("ArrowDown");
     expect(focusedLabel()).toBe("Archive");
     pressKey("ArrowDown");
@@ -438,6 +440,30 @@ describe("showContextMenuFallback keyboard", () => {
     expect(rename?.style.background).toBe("transparent");
     expect(archive?.style.background).toBe("var(--accent)");
 
+    pressKey("Escape");
+    await expect(selectionPromise).resolves.toBeNull();
+  });
+
+  it("names submenus after their trigger and reads detail after a pause", async () => {
+    const selectionPromise = showContextMenuFallback([
+      {
+        id: "snooze",
+        label: "Snooze",
+        children: [{ id: "snooze:hour", label: "In 1 hour", detail: "3:00 PM" }],
+      },
+    ]);
+
+    pressKey("ArrowDown");
+    pressKey("ArrowRight");
+    const menuLabels = (document as unknown as FakeDocument)
+      .querySelectorAll("div")
+      .filter((element) => element.attributes.get("role") === "menu")
+      .map((menu) => menu.attributes.get("aria-label"));
+    expect(menuLabels).toEqual([undefined, "Snooze"]);
+    expect(findButton("In 1 hour")?.attributes.get("aria-label")).toBe("In 1 hour, 3:00 PM");
+    expect(findButton("In 1 hour")?.textContent).toBe("In 1 hour3:00 PM");
+
+    pressKey("Escape");
     pressKey("Escape");
     await expect(selectionPromise).resolves.toBeNull();
   });
