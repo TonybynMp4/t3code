@@ -229,6 +229,23 @@ export function showContextMenuFallback<T extends string>(
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const menuStack: HTMLDivElement[] = [];
     const submenuTriggerStack: Array<HTMLButtonElement | undefined> = [];
+    // Keyboard moves can land while the window lacks focus, when browsers
+    // skip focus events, so highlights are refreshed explicitly after them.
+    const highlightUpdaters = new Set<() => void>();
+    const refreshHighlights = () => {
+      for (const update of highlightUpdaters) update();
+    };
+    // Arrow keys scroll the menu under a resting pointer, and the browser then
+    // fires mouseenter on whatever item lands beneath it. Hover is ignored
+    // after a keyboard move until the pointer really moves again.
+    let isKeyboardDriven = false;
+    let lastPointer: { x: number; y: number } | null = null;
+    const onMouseMove = (event: MouseEvent) => {
+      if (lastPointer?.x !== event.clientX || lastPointer?.y !== event.clientY) {
+        isKeyboardDriven = false;
+      }
+      lastPointer = { x: event.clientX, y: event.clientY };
+    };
     let isDisposed = false;
     let canDismissFromPointer = false;
 
@@ -243,6 +260,7 @@ export function showContextMenuFallback<T extends string>(
         activeContextMenuDismiss = null;
       }
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousemove", onMouseMove, true);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("contextmenu", onContextMenu, true);
       const shouldRestoreFocus = isNodeWithinMenuStack(document.activeElement, menuStack);
@@ -278,7 +296,9 @@ export function showContextMenuFallback<T extends string>(
       const items = enabledItems(menu);
       const focusedIndex = items.findIndex((item) => item === document.activeElement);
       const focusItem = (index: number) => {
-        items[(index + items.length) % items.length]?.focus({ preventScroll: true });
+        const item = items[(index + items.length) % items.length];
+        item?.focus({ preventScroll: true });
+        item?.scrollIntoView({ block: "nearest" });
       };
       const closeLevel = () => {
         const trigger = submenuTriggerStack[level];
@@ -321,6 +341,8 @@ export function showContextMenuFallback<T extends string>(
           return;
       }
       event.preventDefault();
+      isKeyboardDriven = true;
+      refreshHighlights();
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -343,6 +365,7 @@ export function showContextMenuFallback<T extends string>(
         submenuTriggerStack.pop()?.setAttribute("aria-expanded", "false");
         menuStack.pop()?.remove();
       }
+      refreshHighlights();
     };
 
     const openMenu = (
@@ -402,7 +425,7 @@ export function showContextMenuFallback<T extends string>(
         const isDisabled = item.disabled === true;
         button.disabled = isDisabled;
         const rowBase =
-          "flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-left outline-none transition-colors sm:min-h-7 sm:text-sm min-h-8 text-base";
+          "flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-left outline-none sm:min-h-7 sm:text-sm min-h-8 text-base";
         button.className = isDisabled
           ? `${rowBase} pointer-events-none cursor-not-allowed text-muted-foreground opacity-64`
           : isLeafDestructive
@@ -462,10 +485,11 @@ export function showContextMenuFallback<T extends string>(
         }
 
         if (!isDisabled) {
-          let isHovered = false;
-          let isFocused = false;
+          // Hover focuses an item, so the focused item is the one highlight.
+          // An open submenu keeps its trigger highlighted, like native menus.
           const updateHighlight = () => {
-            const isHighlighted = isHovered || isFocused;
+            const isHighlighted =
+              document.activeElement === button || button.getAttribute("aria-expanded") === "true";
             button.style.background = isHighlighted
               ? isLeafDestructive
                 ? "color-mix(in srgb, var(--destructive) 10%, transparent)"
@@ -480,22 +504,13 @@ export function showContextMenuFallback<T extends string>(
                 : "var(--contrast-foreground)";
           };
           button.addEventListener("mouseenter", () => {
+            if (isKeyboardDriven) return;
             button.focus({ preventScroll: true });
-            isHovered = true;
-            updateHighlight();
+            refreshHighlights();
           });
-          button.addEventListener("mouseleave", () => {
-            isHovered = false;
-            updateHighlight();
-          });
-          button.addEventListener("focus", () => {
-            isFocused = true;
-            updateHighlight();
-          });
-          button.addEventListener("blur", () => {
-            isFocused = false;
-            updateHighlight();
-          });
+          button.addEventListener("focus", updateHighlight);
+          button.addEventListener("blur", updateHighlight);
+          highlightUpdaters.add(updateHighlight);
 
           if (hasChildren) {
             const openSubmenu = (focusFirstItem = false) => {
@@ -504,6 +519,7 @@ export function showContextMenuFallback<T extends string>(
               const nextTop = rect.top;
               openMenu(item.children!, nextLeft, nextTop, level + 1, button);
               button.setAttribute("aria-expanded", "true");
+              updateHighlight();
 
               const childMenu = menuStack[level + 1];
               if (!childMenu) {
@@ -520,7 +536,7 @@ export function showContextMenuFallback<T extends string>(
               }
             };
             button.addEventListener("mouseenter", () => {
-              openSubmenu();
+              if (!isKeyboardDriven) openSubmenu();
             });
             button.addEventListener("click", (event) => {
               event.preventDefault();
@@ -528,7 +544,7 @@ export function showContextMenuFallback<T extends string>(
             });
           } else {
             button.addEventListener("mouseenter", () => {
-              closeMenusFromLevel(level + 1);
+              if (!isKeyboardDriven) closeMenusFromLevel(level + 1);
             });
             button.addEventListener("click", () => {
               if (canDismissFromPointer) cleanup(item.id);
@@ -542,7 +558,7 @@ export function showContextMenuFallback<T extends string>(
       menu.appendChild(inner);
 
       menu.addEventListener("mouseenter", () => {
-        closeMenusFromLevel(level + 1);
+        if (!isKeyboardDriven) closeMenusFromLevel(level + 1);
       });
 
       document.body.appendChild(menu);
@@ -561,6 +577,7 @@ export function showContextMenuFallback<T extends string>(
     };
 
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousemove", onMouseMove, true);
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("contextmenu", onContextMenu, true);
     openMenu(items, position?.x ?? 0, position?.y ?? 0, 0);
