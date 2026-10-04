@@ -313,12 +313,6 @@ export function showContextMenuFallback<T extends string>(
         item?.focus({ preventScroll: true });
         item?.scrollIntoView({ block: "nearest" });
       };
-      const closeLevel = () => {
-        const trigger = submenuTriggerStack[level];
-        closeMenusFromLevel(level);
-        trigger?.focus({ preventScroll: true });
-      };
-
       switch (event.key) {
         case "ArrowDown":
           focusItem(focusedIndex + 1);
@@ -338,13 +332,13 @@ export function showContextMenuFallback<T extends string>(
           break;
         case "ArrowLeft":
           if (level === 0) return;
-          closeLevel();
+          closeMenusFromLevel(level);
           break;
         case "Escape":
           if (level === 0) {
             cleanup(null);
           } else {
-            closeLevel();
+            closeMenusFromLevel(level);
           }
           break;
         case "Tab":
@@ -374,11 +368,16 @@ export function showContextMenuFallback<T extends string>(
       cleanup(null);
     };
 
+    // Focus inside a closing submenu moves to the item that opened it, so the
+    // arrow keys keep working whether the submenu closed by key or by hover.
     const closeMenusFromLevel = (level: number) => {
+      const trigger = submenuTriggerStack[level];
+      const hadFocus = isNodeWithinMenuStack(document.activeElement, menuStack.slice(level));
       while (menuStack.length > level) {
         submenuTriggerStack.pop()?.setAttribute("aria-expanded", "false");
         menuStack.pop()?.remove();
       }
+      if (hadFocus) trigger?.focus({ preventScroll: true });
       refreshHighlights();
     };
 
