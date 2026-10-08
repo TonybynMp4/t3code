@@ -918,61 +918,44 @@ export const make = Effect.gen(function* () {
     );
 
   /**
-   * One page each of a pipeline's jobs and of its trigger jobs, which GitLab lists apart. The
-   * pipeline is addressed in its own project: on a merge request from a fork that is the fork,
-   * and the target project answers 404 for it.
+   * The head pipeline's jobs in place of the pipeline itself, so a failure names the job that
+   * failed. GitLab lists script jobs and trigger jobs apart, so one page of each is read, from the
+   * project the pipeline ran in: on a merge request from a fork that is the fork, and the target
+   * project answers 404 for it. The pipeline stays the one check wherever its jobs cannot stand
+   * for all of it: a failed read, a page that may have left the failed job out, or a pipeline
+   * that has not created any jobs yet.
    */
-  const pipelineJobs = (input: {
-    readonly cwd: string;
-    readonly pipeline: { readonly id: number; readonly projectId: number };
-  }) =>
-    Effect.forEach(
+  const withPipelineJobs = (
+    cwd: string,
+    detail: GitLabMergeRequestDetail,
+  ): Effect.Effect<GitLabMergeRequestDetail> => {
+    const pipeline = detail.headPipeline;
+    if (pipeline === undefined) return Effect.succeed(detail);
+    return Effect.forEach(
       ["jobs", "bridges"],
       (kind) =>
         api({
-          cwd: input.cwd,
-          path: `projects/${input.pipeline.projectId}/pipelines/${input.pipeline.id}/${kind}?${query(
-            [["per_page", String(MAX_PAGE_SIZE)]],
-          )}`,
+          cwd,
+          path: `projects/${pipeline.projectId}/pipelines/${pipeline.id}/${kind}?${query([
+            ["per_page", String(MAX_PAGE_SIZE)],
+          ])}`,
         }),
       { concurrency: 2 },
     ).pipe(
-      Effect.flatMap((results) => {
-        const decoded = decodePipelineJobsJson(results.map((result) => result.stdout.trim()));
-        return Result.isSuccess(decoded)
-          ? Effect.succeed(decoded.success)
-          : Effect.fail(
-              new GitLabMergeRequestReadError({
-                command: "glab",
-                cwd: input.cwd,
-                operation: "listPipelineJobs",
-                cause: decoded.failure,
-              }),
-            );
+      Effect.map((results) => {
+        const decoded = decodePipelineJobsJson(
+          results.map((result) => result.stdout.trim()),
+          MAX_PAGE_SIZE,
+        );
+        return Result.isSuccess(decoded) &&
+          decoded.success.complete &&
+          decoded.success.checks.length > 0
+          ? { ...detail, checks: decoded.success.checks }
+          : detail;
       }),
+      Effect.orElseSucceed(() => detail),
     );
-
-  /**
-   * The head pipeline's jobs in place of the pipeline itself, so a failure names the job that
-   * failed. The pipeline stays the one check wherever its jobs cannot stand for all of it: a
-   * failed read, a full page that may have left the failed job out, a row that could not be
-   * read and may have been the failed job, or a pipeline that has not created any jobs yet.
-   */
-  const withPipelineJobs =
-    (cwd: string) =>
-    (detail: GitLabMergeRequestDetail): Effect.Effect<GitLabMergeRequestDetail> =>
-      detail.headPipeline === undefined
-        ? Effect.succeed(detail)
-        : pipelineJobs({ cwd, pipeline: detail.headPipeline }).pipe(
-            Effect.map(({ checks, rawCounts }) =>
-              checks.length === 0 ||
-              rawCounts.some((count) => count >= MAX_PAGE_SIZE) ||
-              rawCounts.reduce((total, count) => total + count, 0) !== checks.length
-                ? detail
-                : { ...detail, checks },
-            ),
-            Effect.orElseSucceed(() => detail),
-          );
+  };
 
   /**
    * The merge request itself, which several calls need for different parts of it: the detail for
@@ -1005,7 +988,7 @@ export const make = Effect.gen(function* () {
           );
         }
         return input.includeJobs === true
-          ? withPipelineJobs(input.cwd)(decoded.success)
+          ? withPipelineJobs(input.cwd, decoded.success)
           : Effect.succeed(decoded.success);
       }),
     );

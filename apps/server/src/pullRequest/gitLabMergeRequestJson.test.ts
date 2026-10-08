@@ -240,32 +240,36 @@ describe("decodeMergeRequestDetailJson", () => {
 
 describe("decodePipelineJobsJson", () => {
   it("reads each job as a check, in the order the pipeline runs them", () => {
-    const { checks, rawCounts } = expectSuccess(
-      decodePipelineJobsJson([
-        JSON.stringify([
-          {
-            id: 13,
-            name: "deploy",
-            stage: "deploy",
-            status: "created",
-            web_url: "https://gitlab.com/acme/web/-/jobs/13",
-          },
-          {
-            id: 12,
-            name: "lint",
-            stage: "test",
-            status: "failed",
-            allow_failure: true,
-            web_url: "https://gitlab.com/acme/web/-/jobs/12",
-          },
-          { id: 11, name: "build", stage: "build", status: "running" },
-          { id: 10, stage: "build", status: "success" },
-        ]),
-        JSON.stringify([]),
-      ]),
+    const { checks, complete } = expectSuccess(
+      decodePipelineJobsJson(
+        [
+          JSON.stringify([
+            {
+              id: 13,
+              name: "deploy",
+              stage: "deploy",
+              status: "created",
+              web_url: "https://gitlab.com/acme/web/-/jobs/13",
+            },
+            {
+              id: 12,
+              name: "lint",
+              stage: "test",
+              status: "failed",
+              allow_failure: true,
+              web_url: "https://gitlab.com/acme/web/-/jobs/12",
+            },
+            { id: 11, name: "build", stage: "build", status: "running" },
+            { id: 10, stage: "build", status: "success" },
+          ]),
+          JSON.stringify([]),
+        ],
+        100,
+      ),
     );
 
-    expect(rawCounts).toEqual([4, 0]);
+    // The job without a name could not be read, and may be the one that failed.
+    expect(complete).toBe(false);
     expect(checks).toEqual([
       { name: "build", status: "pending", description: "build", url: null },
       // Allowed to fail, so the pipeline passes over it and so does the check.
@@ -286,25 +290,28 @@ describe("decodePipelineJobsJson", () => {
 
   it("reads a trigger job as the pipeline it started", () => {
     const { checks } = expectSuccess(
-      decodePipelineJobsJson([
-        JSON.stringify([{ id: 20, name: "unit", stage: "test", status: "success" }]),
-        JSON.stringify([
-          {
-            id: 21,
-            name: "trigger:docs",
-            stage: "test",
-            // The trigger itself succeeds as soon as the child pipeline exists.
-            status: "success",
-            web_url: "https://gitlab.com/acme/web/-/jobs/21",
-            downstream_pipeline: {
-              id: 30,
-              status: "failed",
-              web_url: "https://gitlab.com/acme/web/-/pipelines/30",
+      decodePipelineJobsJson(
+        [
+          JSON.stringify([{ id: 20, name: "unit", stage: "test", status: "success" }]),
+          JSON.stringify([
+            {
+              id: 21,
+              name: "trigger:docs",
+              stage: "test",
+              // The trigger itself succeeds as soon as the child pipeline exists.
+              status: "success",
+              web_url: "https://gitlab.com/acme/web/-/jobs/21",
+              downstream_pipeline: {
+                id: 30,
+                status: "failed",
+                web_url: "https://gitlab.com/acme/web/-/pipelines/30",
+              },
             },
-          },
-          { id: 22, name: "trigger:e2e", stage: "test", status: "created" },
-        ]),
-      ]),
+            { id: 22, name: "trigger:e2e", stage: "test", status: "created" },
+          ]),
+        ],
+        100,
+      ),
     );
 
     expect(checks).toEqual([

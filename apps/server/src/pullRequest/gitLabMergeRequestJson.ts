@@ -480,25 +480,29 @@ export function decodeMergeRequestDetailJson(
  * told to wait on that pipeline, it succeeds the moment the pipeline exists. A job allowed to
  * fail that failed does not fail the pipeline, so it reads as neutral, the way GitLab shows it.
  */
-export function decodePipelineJobsJson(pages: ReadonlyArray<string>): Result.Result<
+export function decodePipelineJobsJson(
+  pages: ReadonlyArray<string>,
+  pageSize: number,
+): Result.Result<
   {
     readonly checks: ReadonlyArray<PullRequestCheck>;
-    /** Rows GitLab returned on each page, counted before decoding, so none can hide a next page. */
-    readonly rawCounts: ReadonlyArray<number>;
+    /** False when a page came back full or a row could not be read: either may hide a job. */
+    readonly complete: boolean;
   },
   DecodeFailure
 > {
   const jobs: Array<Schema.Schema.Type<typeof RawJobSchema>> = [];
-  const rawCounts: number[] = [];
+  let complete = true;
   for (const page of pages) {
     const decoded = decodeUnknownList(page);
     if (!Result.isSuccess(decoded)) {
       return Result.fail(decoded.failure);
     }
-    rawCounts.push(decoded.success.length);
+    if (decoded.success.length >= pageSize) complete = false;
     for (const entry of decoded.success) {
       const job = decodeJobEntry(entry);
       if (Exit.isSuccess(job) && trimmed(job.value.name) !== null) jobs.push(job.value);
+      else complete = false;
     }
   }
   // GitLab lists jobs newest first, and a later stage's jobs are created after an earlier one's.
@@ -513,7 +517,7 @@ export function decodePipelineJobsJson(pages: ReadonlyArray<string>): Result.Res
         url: trimmed(job.downstream_pipeline?.web_url) ?? trimmed(job.web_url),
       };
     });
-  return Result.succeed({ checks, rawCounts });
+  return Result.succeed({ checks, complete });
 }
 
 export function decodeViewerJson(raw: string): Result.Result<string | null, DecodeFailure> {

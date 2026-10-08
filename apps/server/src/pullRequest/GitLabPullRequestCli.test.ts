@@ -896,9 +896,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockImplementation((input) => {
         const path = input.args[1] ?? "";
         if (path.includes("/jobs?")) {
-          return pages.jobs === null
-            ? Effect.succeed(output('{"message":"404 Not Found"}'))
-            : Effect.succeed(output(pages.jobs));
+          return Effect.succeed(output(pages.jobs ?? '{"message":"404 Not Found"}'));
         }
         if (path.includes("/bridges?")) return Effect.succeed(output(pages.bridges));
         return Effect.succeed(output(detailWithPipeline));
