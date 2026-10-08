@@ -915,7 +915,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
     it.effect("reads them from the project the pipeline ran in, in place of the pipeline", () =>
       Effect.gen(function* () {
         answer({
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           jobs: JSON.stringify([
             { id: 12, name: "lint", stage: "test", status: "failed" },
             { id: 11, name: "build", stage: "build", status: "success" },
@@ -941,14 +940,12 @@ layer("GitLabPullRequestCli.layer", (it) => {
       Effect.gen(function* () {
         // A full page may have left out the job that failed, and a pipeline with no jobs yet
         // still has a status worth showing.
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         const full = JSON.stringify(Array.from({ length: 100 }, (_, index) => job(index + 1)));
         for (const pages of [
           { jobs: null, bridges: "[]" },
           { jobs: full, bridges: "[]" },
           { jobs: "[]", bridges: full },
           // A row that cannot be read may be the job that failed.
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           { jobs: JSON.stringify([job(1), { id: 2, status: "failed" }]), bridges: "[]" },
           { jobs: "[]", bridges: "[]" },
         ]) {
