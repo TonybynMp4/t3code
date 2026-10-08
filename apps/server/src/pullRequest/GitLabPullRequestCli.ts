@@ -930,7 +930,9 @@ export const make = Effect.gen(function* () {
    * The checks of finished pipelines, by pipeline and the moment it settled, or null where its
    * jobs could not stand for it. A finished pipeline's jobs do not change until it runs again,
    * and that moves the moment, so every refresh of a merge request whose pipeline is done costs
-   * no job reads. Only answers GitLab gave are kept: a read that failed is tried again.
+   * no job reads. Only answers GitLab gave are kept: a read that failed is tried again. A
+   * pipeline with trigger jobs is never kept: the pipelines they start run on their own, past
+   * the parent finishing and through retries that never move the parent's moment.
    */
   const settledPipelineChecks = new Map<string, ReadonlyArray<PullRequestCheck> | null>();
   const rememberSettledPipeline = (key: string, checks: ReadonlyArray<PullRequestCheck> | null) => {
@@ -1013,7 +1015,9 @@ export const make = Effect.gen(function* () {
               [...jobs, ...bridges]
                 .toSorted((left, right) => left.id - right.id)
                 .map((job) => job.check);
-        if (settledKey !== null) rememberSettledPipeline(settledKey, checks);
+        if (settledKey !== null && bridges?.length === 0) {
+          rememberSettledPipeline(settledKey, checks);
+        }
         return checks === null ? detail : { ...detail, checks };
       }),
       Effect.orElseSucceed(() => detail),

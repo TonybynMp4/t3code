@@ -1019,6 +1019,32 @@ layer("GitLabPullRequestCli.layer", (it) => {
       }),
     );
 
+    it.effect("reads a finished pipeline's trigger jobs every time", () =>
+      Effect.gen(function* () {
+        // A trigger job that does not wait lets the parent finish while its child still runs.
+        const bridge = (status: string) =>
+          JSON.stringify([
+            {
+              id: 3,
+              name: "trigger:docs",
+              stage: "test",
+              status: "success",
+              downstream_pipeline: { id: 30, status },
+            },
+          ]);
+        const pipeline = { ...headPipeline, id: 500, status: "success" };
+        answer({ jobs: pageOf(1, 2), bridges: bridge("running") }, pipeline);
+        const running = yield* read(true);
+        expect(running.checks.at(-1)?.status).toBe("pending");
+
+        answer({ jobs: pageOf(1, 2), bridges: bridge("failed") }, pipeline);
+        const failed = yield* read(true);
+
+        expect(jobReads()).toBe(4);
+        expect(failed.checks.at(-1)?.status).toBe("failure");
+      }),
+    );
+
     it.effect("reads a running pipeline's jobs every time", () =>
       Effect.gen(function* () {
         answer(
