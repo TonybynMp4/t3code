@@ -149,7 +149,7 @@ export const make = Effect.gen(function* () {
       cli.getMergeRequestDetail(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
 
     getChangeRequestChecks: (input) =>
-      cli.getMergeRequestDetail(input).pipe(
+      cli.getMergeRequestDetail({ ...input, includeJobs: true }).pipe(
         Effect.map(({ state, checks }) => ({ state, checks })),
         Effect.mapError(fail("getChangeRequestChecks")),
       ),
