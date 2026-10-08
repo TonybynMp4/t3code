@@ -902,6 +902,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
         readonly bridges: string | ReadonlyArray<string>;
       },
       pipeline: Record<string, unknown> = headPipeline,
+      mergeRequest: Record<string, unknown> = {},
     ) {
       mockedExecute.mockImplementation((input) => {
         const path = input.args[1] ?? "";
@@ -911,7 +912,9 @@ layer("GitLabPullRequestCli.layer", (it) => {
             ? "bridges"
             : null;
         if (kind === null) {
-          return Effect.succeed(output(mergeRequestJson({ head_pipeline: pipeline })));
+          return Effect.succeed(
+            output(mergeRequestJson({ ...mergeRequest, head_pipeline: pipeline })),
+          );
         }
         const pages = lists[kind];
         const page = Number(new URLSearchParams(path.split("?")[1]).get("page"));
@@ -1016,6 +1019,22 @@ layer("GitLabPullRequestCli.layer", (it) => {
         const rerun = yield* read(true);
         expect(jobReads()).toBe(4);
         expect(rerun.checks).toHaveLength(3);
+      }),
+    );
+
+    it.effect("keeps a finished pipeline's checks apart from another GitLab's", () =>
+      Effect.gen(function* () {
+        const pipeline = { ...headPipeline, id: 230 };
+        answer({ jobs: pageOf(1, 2), bridges: "[]" }, pipeline);
+        yield* read(true);
+
+        // The same ids on a self-managed GitLab name a different pipeline.
+        answer({ jobs: pageOf(1, 3), bridges: "[]" }, pipeline, {
+          web_url: "https://gitlab.example.com/acme/web/-/merge_requests/7",
+        });
+        const other = yield* read(true);
+        expect(jobReads()).toBe(4);
+        expect(other.checks).toHaveLength(3);
       }),
     );
 

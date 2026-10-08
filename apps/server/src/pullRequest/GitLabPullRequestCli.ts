@@ -927,7 +927,9 @@ export const make = Effect.gen(function* () {
     );
 
   /**
-   * The checks of finished pipelines, by pipeline and the moment it settled. A finished
+   * The checks of finished pipelines, by the merge request that showed them, the pipeline and
+   * the moment it settled. The merge request's URL names its host, and ids are only unique
+   * within one GitLab, so a server reading from several never answers one from another. A finished
    * pipeline's jobs do not change until it runs again, and that moves the moment, so every
    * refresh of a merge request whose pipeline is done costs no job reads. Only whole job lists
    * are kept: a read that failed, came back partial or found no jobs is tried again. A
@@ -994,7 +996,7 @@ export const make = Effect.gen(function* () {
     const settledKey =
       pipeline.settledAt === null
         ? null
-        : `${pipeline.projectId}/${pipeline.id}@${pipeline.settledAt}`;
+        : `${detail.url}#${pipeline.projectId}/${pipeline.id}@${pipeline.settledAt}`;
     const settled = settledKey === null ? undefined : settledPipelineChecks.get(settledKey);
     if (settled !== undefined) {
       return Effect.succeed({ ...detail, checks: settled });
