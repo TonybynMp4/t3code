@@ -144,6 +144,10 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
+    // Summaries never show checks, so they skip the job reads and merge capabilities.
+    getChangeRequestSummary: (input) =>
+      cli.getMergeRequestDetail(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
+
     getChangeRequestChecks: (input) =>
       cli.getMergeRequestDetail(input).pipe(
         Effect.map(({ state, checks }) => ({ state, checks })),
