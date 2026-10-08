@@ -44,6 +44,7 @@ const RawPipelineSchema = Schema.Struct({
   status: Schema.optional(Schema.NullOr(Schema.String)),
   web_url: Schema.optional(Schema.NullOr(Schema.String)),
   source: Schema.optional(Schema.NullOr(Schema.String)),
+  updated_at: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const RawMergeRequestSchema = Schema.Struct({
@@ -243,7 +244,15 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   /** The head pipeline as one check; its jobs replace it where they can be read. */
   readonly checks: ReadonlyArray<PullRequestCheck>;
   /** The head pipeline, which is what its jobs are read by. */
-  readonly headPipeline?: { readonly id: number; readonly projectId: number };
+  readonly headPipeline?: {
+    readonly id: number;
+    readonly projectId: number;
+    /**
+     * When a finished pipeline last changed, or null while it can still change. Retrying a job
+     * runs the pipeline again, which moves this, so a finished pipeline's jobs can be kept by it.
+     */
+    readonly settledAt: string | null;
+  };
   /** False only where GitLab said so; an answer without the field leaves merging permitted. */
   readonly viewerCanMerge: boolean;
   /** The reviewers as GitLab addresses them, which is what writing the set back takes. */
@@ -315,6 +324,14 @@ function toChangedFiles(value: string | null | undefined): number {
   const parsed = Number.parseInt(value?.trim() ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
+
+/** Pipeline statuses no job changes without first running the pipeline again. */
+const SETTLED_PIPELINE_STATUSES: ReadonlySet<string> = new Set([
+  "success",
+  "failed",
+  "canceled",
+  "skipped",
+]);
 
 function toPipelineStatus(value: string | null | undefined): PullRequestCheckStatus {
   switch (value?.trim().toLowerCase()) {
@@ -400,7 +417,15 @@ function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLab
     checks: toChecks(raw),
     ...(raw.head_pipeline?.id == null || raw.head_pipeline.project_id == null
       ? {}
-      : { headPipeline: { id: raw.head_pipeline.id, projectId: raw.head_pipeline.project_id } }),
+      : {
+          headPipeline: {
+            id: raw.head_pipeline.id,
+            projectId: raw.head_pipeline.project_id,
+            settledAt: SETTLED_PIPELINE_STATUSES.has(raw.head_pipeline.status?.trim() ?? "")
+              ? trimmed(raw.head_pipeline.updated_at)
+              : null,
+          },
+        }),
     viewerCanMerge: raw.user?.can_merge !== false,
     reviewerIds: (raw.reviewers ?? []).flatMap((reviewer) =>
       reviewer.id === undefined ? [] : [reviewer.id],
@@ -473,51 +498,49 @@ export function decodeMergeRequestDetailJson(
     : Result.fail(decoded.failure);
 }
 
+/** A pipeline job read as a check, with the id that orders it among the pipeline's jobs. */
+export interface GitLabPipelineJob {
+  readonly id: number;
+  readonly check: PullRequestCheck;
+}
+
 /**
- * A pipeline's jobs as one check each, in the order the pipeline runs them. GitLab lists the jobs
- * that run a script and the ones that trigger another pipeline on two endpoints, so both pages are
- * read together. A trigger job reports the pipeline it started rather than itself: unless it was
- * told to wait on that pipeline, it succeeds the moment the pipeline exists. A job allowed to
- * fail that failed does not fail the pipeline, so it reads as neutral, the way GitLab shows it.
+ * One page of a pipeline's jobs, one check each. A trigger job reports the pipeline it started
+ * rather than itself: unless it was told to wait on that pipeline, it succeeds the moment the
+ * pipeline exists. A job allowed to fail that failed does not fail the pipeline, so it reads as
+ * neutral, the way GitLab shows it. `rawCount` is the rows GitLab sent, counted before decoding,
+ * so a full page still says there is more and a row that could not be read is not lost silently.
  */
 export function decodePipelineJobsJson(
-  pages: ReadonlyArray<string>,
-  pageSize: number,
+  raw: string,
 ): Result.Result<
-  {
-    readonly checks: ReadonlyArray<PullRequestCheck>;
-    /** False when a page came back full or a row could not be read: either may hide a job. */
-    readonly complete: boolean;
-  },
+  { readonly jobs: ReadonlyArray<GitLabPipelineJob>; readonly rawCount: number },
   DecodeFailure
 > {
-  const jobs: Array<Schema.Schema.Type<typeof RawJobSchema>> = [];
-  let complete = true;
-  for (const page of pages) {
-    const decoded = decodeUnknownList(page);
-    if (!Result.isSuccess(decoded)) {
-      return Result.fail(decoded.failure);
-    }
-    if (decoded.success.length >= pageSize) complete = false;
-    for (const entry of decoded.success) {
-      const job = decodeJobEntry(entry);
-      if (Exit.isSuccess(job) && trimmed(job.value.name) !== null) jobs.push(job.value);
-      else complete = false;
-    }
+  const decoded = decodeUnknownList(raw);
+  if (!Result.isSuccess(decoded)) {
+    return Result.fail(decoded.failure);
   }
-  // GitLab lists jobs newest first, and a later stage's jobs are created after an earlier one's.
-  const checks = jobs
-    .toSorted((left, right) => left.id - right.id)
-    .map((job): PullRequestCheck => {
-      const status = toPipelineStatus(job.downstream_pipeline?.status ?? job.status);
-      return {
-        name: job.name.trim(),
-        status: status === "failure" && job.allow_failure === true ? "neutral" : status,
-        description: trimmed(job.stage),
-        url: trimmed(job.downstream_pipeline?.web_url) ?? trimmed(job.web_url),
-      };
-    });
-  return Result.succeed({ checks, complete });
+  const jobs = decoded.success.flatMap((entry): ReadonlyArray<GitLabPipelineJob> => {
+    const job = decodeJobEntry(entry);
+    if (!Exit.isSuccess(job)) return [];
+    const name = trimmed(job.value.name);
+    if (name === null) return [];
+    const { downstream_pipeline: downstream } = job.value;
+    const status = toPipelineStatus(downstream?.status ?? job.value.status);
+    return [
+      {
+        id: job.value.id,
+        check: {
+          name,
+          status: status === "failure" && job.value.allow_failure === true ? "neutral" : status,
+          description: trimmed(job.value.stage),
+          url: trimmed(downstream?.web_url) ?? trimmed(job.value.web_url),
+        },
+      },
+    ];
+  });
+  return Result.succeed({ jobs, rawCount: decoded.success.length });
 }
 
 export function decodeViewerJson(raw: string): Result.Result<string | null, DecodeFailure> {
