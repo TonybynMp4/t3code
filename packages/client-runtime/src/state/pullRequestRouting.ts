@@ -43,6 +43,7 @@ const reads = new Set<string>([
   WS_METHODS.pullRequestsFilesViewed,
   WS_METHODS.pullRequestsReviewerCandidates,
   WS_METHODS.pullRequestsLabelCandidates,
+  WS_METHODS.pullRequestsAssigneeCandidates,
 ]);
 // Review guides are not routed: each server keeps its own, so another server answering would
 // report none, or start a run nobody on the pull request's own server can see.
@@ -58,6 +59,7 @@ const writes = new Set<string>([
   WS_METHODS.pullRequestsSetThreadResolution,
   WS_METHODS.pullRequestsRequestReviewers,
   WS_METHODS.pullRequestsSetLabels,
+  WS_METHODS.pullRequestsSetAssignees,
 ]);
 const isRef = Schema.is(PullRequestRef);
 const hasState = Schema.is(Schema.Struct({ state: PullRequestState }));

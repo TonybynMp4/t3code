@@ -219,6 +219,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
     }),
   );
+  const assigneeCandidates = writableQueryFamily(
+    createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:assignee-candidates",
+      tag: WS_METHODS.pullRequestsAssigneeCandidates,
+      execute: (input) => routedRequest(WS_METHODS.pullRequestsAssigneeCandidates, input),
+      staleTimeMs: 60_000,
+    }),
+  );
   // The stored guide only changes when somebody generates one, which refreshes it below.
   const reviewGuide = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -582,6 +590,57 @@ export function createPullRequestEnvironmentAtoms<R, E>(
                 ]
               : value.labels.filter((label) => !names.has(label.name)),
           }));
+        }),
+    }),
+    /** Read when the assignee menu opens, and kept for a minute, like the label candidates. */
+    assigneeCandidates,
+    setAssignees: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pull-requests:set-assignees",
+      tag: WS_METHODS.pullRequestsSetAssignees,
+      execute: (input) => routedRequest(WS_METHODS.pullRequestsSetAssignees, input),
+      scheduler: commandScheduler,
+      concurrency: serialPerEnvironment,
+      onSuccess: (target, registry) =>
+        Effect.sync(() => {
+          const { assignees, assigned } = target.input;
+          const candidatesAtom = assigneeCandidates(target);
+          const candidates = Option.getOrNull(AsyncResult.value(registry.get(candidatesAtom)));
+          const ids = new Set(assignees);
+          const selected =
+            candidates?.candidates.filter((candidate) => ids.has(candidate.id)) ?? [];
+          updateCached(registry, candidatesAtom, (value) => ({
+            ...value,
+            candidates: value.candidates.map((candidate) =>
+              ids.has(candidate.id) ? { ...candidate, isAssigned: assigned } : candidate,
+            ),
+          }));
+          const logins = new Set(selected.map((candidate) => candidate.login.toLowerCase()));
+          // Without the candidates' faces in hand the detail is read again rather than guessed.
+          updateCached(
+            registry,
+            detail(target),
+            (value) => {
+              const current = value.assignees ?? [];
+              return {
+                ...value,
+                assignees: assigned
+                  ? [
+                      ...current,
+                      ...selected
+                        .filter(
+                          (candidate) =>
+                            !current.some(
+                              (actor) =>
+                                actor.login.toLowerCase() === candidate.login.toLowerCase(),
+                            ),
+                        )
+                        .map(({ login, name, avatarUrl }) => ({ login, name, avatarUrl })),
+                    ]
+                  : current.filter((actor) => !logins.has(actor.login.toLowerCase())),
+              };
+            },
+            selected.length < assignees.length,
+          );
         }),
     }),
     setThreadResolution: createEnvironmentRpcCommand(runtime, {

@@ -42,6 +42,7 @@ const CAPABILITIES: PullRequestCapabilities = {
     verdicts: ["comment", "approve"],
   },
   reviewers: { request: true, listCandidates: true },
+  assignees: true,
   edit: { changeRequest: true, comment: true },
 };
 
@@ -84,6 +85,8 @@ export function gitLabViewerPermissions(input: {
     resolve: true,
     verdicts: CAPABILITIES.review.verdicts,
     requestReviewers: true,
+    // GitLab does not say whether this viewer may assign; it refuses when they may not.
+    assignees: true,
     ...(input.viewerCanMerge ? { updateMethods: CAPABILITIES.updateMethods } : {}),
   };
 }
@@ -257,6 +260,26 @@ export const make = Effect.gen(function* () {
           requested: input.requested,
         })
         .pipe(Effect.mapError(fail("setReviewerRequest"))),
+
+    listAssigneeCandidates: (input) =>
+      cli
+        .listAssigneeCandidates({
+          cwd: input.cwd,
+          repository: input.repository,
+          number: input.number,
+        })
+        .pipe(Effect.mapError(fail("listAssigneeCandidates"))),
+
+    setAssignees: (input) =>
+      cli
+        .setAssignees({
+          cwd: input.cwd,
+          repository: input.repository,
+          number: input.number,
+          assignees: input.assignees,
+          assigned: input.assigned,
+        })
+        .pipe(Effect.mapError(fail("setAssignees"))),
 
     runAction: (input) =>
       cli

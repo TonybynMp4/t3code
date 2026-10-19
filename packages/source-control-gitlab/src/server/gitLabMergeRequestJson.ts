@@ -235,6 +235,8 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   readonly viewerCanMerge: boolean;
   /** The reviewers as GitLab addresses them, which is what writing the set back takes. */
   readonly reviewerIds: ReadonlyArray<number>;
+  /** The assignees as GitLab addresses them, for the same reason. */
+  readonly assigneeIds: ReadonlyArray<number>;
   /** Absent where GitLab named neither auto-merge field, which is not the same as off. */
   readonly autoMergeEnabled?: boolean;
   /** GitLab only exposes the stored strategy separately when that strategy is squash. */
@@ -395,6 +397,9 @@ function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLab
     viewerCanMerge: raw.user?.can_merge !== false,
     reviewerIds: (raw.reviewers ?? []).flatMap((reviewer) =>
       reviewer.id === undefined ? [] : [reviewer.id],
+    ),
+    assigneeIds: (raw.assignees ?? []).flatMap((assignee) =>
+      assignee.id === undefined ? [] : [assignee.id],
     ),
     ...(autoMerge === undefined ? {} : { autoMergeEnabled: autoMerge }),
     ...(autoMerge === true && raw.squash_on_merge === true

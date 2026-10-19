@@ -39,6 +39,7 @@ import {
   type PullRequestReviewerCandidateList,
   type PullRequestReviewerKind,
   type PullRequestLabelCandidateList,
+  type PullRequestAssigneeCandidateList,
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateMethod,
   type PullRequestPreview,
@@ -85,6 +86,8 @@ import {
   decodeReactionSubjectScopeJson,
   decodeReviewerCandidatesJson,
   decodeLabelCandidatesJson,
+  decodeAssigneeCandidatesJson,
+  ASSIGNEE_CANDIDATES_GRAPHQL_QUERY,
   buildLabelRequest,
   LABEL_CANDIDATES_GRAPHQL_QUERY,
   decodeReviewDismissalsJson,
@@ -705,6 +708,25 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly labels: ReadonlyArray<string>;
       /** False takes each label off; true adds each to whatever is already there. */
       readonly applied: boolean;
+    }) => Effect.Effect<void, GitHubPullRequestApiError>;
+
+    /** The people this pull request may be assigned to, and which of them already are. */
+    readonly listAssigneeCandidates: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+    }) => Effect.Effect<PullRequestAssigneeCandidateList, GitHubPullRequestApiError>;
+
+    readonly setAssignees: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+      /** Logins, as the candidate list named them. */
+      readonly assignees: ReadonlyArray<string>;
+      /** False deletes the same collection an assignment posts to. */
+      readonly assigned: boolean;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
     readonly runPullRequestAction: (input: {
@@ -2500,6 +2522,33 @@ export const make = Effect.gen(function* () {
           }),
         { concurrency: 1, discard: true },
       );
+    },
+
+    listAssigneeCandidates: (input) => {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      return graphqlRead({
+        cwd: input.cwd,
+        host: input.host,
+        operation: "listAssigneeCandidates",
+        allowReserve: true,
+        variables: { owner, name, number: input.number },
+        query: ASSIGNEE_CANDIDATES_GRAPHQL_QUERY,
+        decode: decodeAssigneeCandidatesJson,
+      });
+    },
+
+    setAssignees: (input) => {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      // A pull request is an issue to the assignees API, which adds to and removes from the set.
+      return api
+        .rest({
+          host: input.host,
+          operation: "setAssignees",
+          method: input.assigned ? "POST" : "DELETE",
+          path: `repos/${owner}/${name}/issues/${input.number}/assignees`,
+          body: { assignees: input.assignees },
+        })
+        .pipe(Effect.asVoid);
     },
 
     runPullRequestAction: (input) => {

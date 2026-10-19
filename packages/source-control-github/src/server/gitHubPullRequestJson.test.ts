@@ -19,6 +19,7 @@ import {
   decodePullRequestNodeIdJson,
   decodePullRequestSearchJson,
   decodePullRequestStacksJson,
+  decodeAssigneeCandidatesJson,
   decodeLabelCandidatesJson,
   decodeReviewerCandidatesJson,
   decodeReviewThreadCommentsJson,
@@ -1067,6 +1068,37 @@ describe("viewer permission decoding", () => {
     );
     expect(access.canTriage).toBe(true);
     expect(access.canWrite).toBe(false);
+  });
+});
+
+describe("assignee candidate decoding", () => {
+  it("leads with the current assignees, even one who is no longer assignable", () => {
+    const list = expectSuccess(
+      decodeAssigneeCandidatesJson(
+        JSON.stringify({
+          data: {
+            repository: {
+              assignableUsers: {
+                pageInfo: { hasNextPage: true },
+                nodes: [
+                  { login: "octocat", name: "Mona", avatarUrl: "https://a/1" },
+                  { login: "Hubot", name: null, avatarUrl: null },
+                ],
+              },
+              pullRequest: {
+                assignees: { nodes: [{ login: "hubot" }, { login: "former", name: "Gone" }] },
+              },
+            },
+          },
+        }),
+      ),
+    );
+    expect(list.candidates.map((entry) => [entry.id, entry.isAssigned])).toEqual([
+      ["hubot", true],
+      ["former", true],
+      ["octocat", false],
+    ]);
+    expect(list.truncated).toBe(true);
   });
 });
 

@@ -18,6 +18,7 @@ import type {
   PullRequestReviewThread,
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
+  PullRequestAssigneeCandidateList,
 } from "@t3tools/contracts";
 import { resolvePullRequestAssigneeFilter } from "@t3tools/contracts";
 
@@ -320,6 +321,22 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly number: number;
       readonly reviewers: ReadonlyArray<{ readonly id: string }>;
       readonly requested: boolean;
+    }) => Effect.Effect<void, GitLabPullRequestCliError>;
+
+    /** Who this merge request may be assigned to, read the same two ways as the reviewers. */
+    readonly listAssigneeCandidates: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly number: number;
+    }) => Effect.Effect<PullRequestAssigneeCandidateList, GitLabPullRequestCliError>;
+
+    readonly setAssignees: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly number: number;
+      /** Numeric user ids, as the candidate list named them. */
+      readonly assignees: ReadonlyArray<string>;
+      readonly assigned: boolean;
     }) => Effect.Effect<void, GitLabPullRequestCliError>;
 
     readonly runMergeRequestAction: (input: {
@@ -1371,6 +1388,44 @@ export const make = Effect.gen(function* () {
             path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
             method: "PUT",
             stdin: JSON.stringify({ reviewer_ids: [...ids] }),
+          });
+        }),
+        Effect.asVoid,
+      ),
+
+    listAssigneeCandidates: (input) =>
+      Effect.all([mergeRequestDetail(input), projectUsers(input)], { concurrency: 2 }).pipe(
+        Effect.map(([mergeRequest, users]) => {
+          const assigned = new Set(mergeRequest.assigneeIds.map(String));
+          return {
+            candidates: users.candidates.map(
+              ({ kind: _kind, isRequested: _isRequested, ...user }) => ({
+                ...user,
+                isAssigned: assigned.has(user.id),
+              }),
+            ),
+            truncated: users.rawCount >= MAX_PAGE_SIZE,
+          };
+        }),
+      ),
+
+    setAssignees: (input) =>
+      mergeRequestDetail(input).pipe(
+        Effect.flatMap((mergeRequest) => {
+          // Like `reviewer_ids`, `assignee_ids` replaces the whole set.
+          const ids = new Set(mergeRequest.assigneeIds);
+          for (const assignee of input.assignees) {
+            const id = Number(assignee);
+            if (!Number.isSafeInteger(id) || id <= 0) continue;
+            if (input.assigned) ids.add(id);
+            else ids.delete(id);
+          }
+          return api({
+            cwd: input.cwd,
+            path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
+            method: "PUT",
+            // An empty list leaves the assignees untouched; `0` is how GitLab clears them.
+            stdin: JSON.stringify({ assignee_ids: ids.size === 0 ? [0] : [...ids] }),
           });
         }),
         Effect.asVoid,

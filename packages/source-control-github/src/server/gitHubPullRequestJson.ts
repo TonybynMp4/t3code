@@ -29,6 +29,8 @@ import type {
   PullRequestReviewerKind,
   PullRequestLabelCandidate,
   PullRequestLabelCandidateList,
+  PullRequestAssigneeCandidate,
+  PullRequestAssigneeCandidateList,
   PullRequestState,
   PullRequestThreadComment,
 } from "@t3tools/contracts";
@@ -729,6 +731,7 @@ const RawCoreSchema = Schema.Struct({
           ),
         }),
         labels: Schema.Struct({ nodes: Schema.Array(RawLabelSchema) }),
+        assignees: Schema.optional(Schema.Struct({ nodes: Schema.Array(RawActorSchema) })),
         commits: Schema.Struct({
           nodes: Schema.Array(
             Schema.Struct({
@@ -845,6 +848,7 @@ export const pullRequestCoreGraphQlQuery = (host: string) => {
         nodes { requestedReviewer { ... on User { login name } ... on Bot { login } ... on Team { slug name } } }
       }
       labels(first: 100) { nodes { name color } }
+      assignees(first: 10) { nodes { login name avatarUrl } }
       commits(last: 1) {
         nodes { commit { statusCheckRollup { contexts(first: 100) {
           ${checkContextNodesSelection(host)}
@@ -2338,6 +2342,10 @@ export function decodePullRequestCoreJson(
       labels: pr.labels.nodes,
       statusCheckRollup: toCheckContexts(contexts?.nodes ?? []),
     }),
+    assignees: (pr.assignees?.nodes ?? []).flatMap((assignee) => {
+      const actor = toActor(assignee);
+      return actor === null ? [] : [actor];
+    }),
     viewerAccess: {
       canWrite: toCanWrite(repository.viewerPermission),
       canTriage: toCanTriage(repository.viewerPermission),
@@ -3144,6 +3152,78 @@ export function decodeLabelCandidatesJson(
       ...candidates.values(),
     ],
     truncated: repository.labels?.pageInfo?.hasNextPage === true,
+  });
+}
+
+export const ASSIGNEE_CANDIDATES_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    assignableUsers(first: ${GRAPHQL_PAGE_SIZE}) {
+      pageInfo { hasNextPage }
+      nodes { login name avatarUrl }
+    }
+    pullRequest(number: $number) {
+      assignees(first: 10) { nodes { login name avatarUrl } }
+    }
+  }
+}`;
+
+const RawAssigneeCandidatesSchema = Schema.Struct({
+  data: Schema.Struct({
+    repository: Schema.Struct({
+      assignableUsers: Schema.optional(
+        Schema.NullOr(
+          Schema.Struct({
+            pageInfo: Schema.optional(RawPageInfoSchema),
+            nodes: Schema.Array(Schema.NullOr(RawActorSchema)),
+          }),
+        ),
+      ),
+      /** Null for a number that names no pull request the viewer can see. */
+      pullRequest: Schema.NullOr(
+        Schema.Struct({
+          assignees: Schema.optional(
+            Schema.NullOr(Schema.Struct({ nodes: Schema.Array(Schema.NullOr(RawActorSchema)) })),
+          ),
+        }),
+      ),
+    }),
+  }),
+});
+
+const decodeAssigneeCandidates = decodeJsonResult(RawAssigneeCandidatesSchema);
+
+/**
+ * The people this pull request may be assigned to. The current assignees lead, so one who is no
+ * longer assignable, or is past the page, can still be unassigned.
+ */
+export function decodeAssigneeCandidatesJson(
+  raw: string,
+): Result.Result<PullRequestAssigneeCandidateList, DecodeFailure> {
+  const decoded = decodeAssigneeCandidates(raw);
+  if (!Result.isSuccess(decoded)) {
+    return Result.fail(decoded.failure);
+  }
+  const repository = decoded.success.data.repository;
+  const candidates = new Map<string, PullRequestAssigneeCandidate>();
+  const add = (
+    node: Schema.Schema.Type<typeof RawActorSchema> | null,
+    isAssigned: boolean,
+  ): void => {
+    const actor = toActor(node);
+    if (actor === null || candidates.has(actor.login.toLowerCase())) return;
+    candidates.set(actor.login.toLowerCase(), {
+      login: actor.login,
+      name: actor.name,
+      avatarUrl: actor.avatarUrl,
+      id: actor.login,
+      isAssigned,
+    });
+  };
+  for (const node of repository.pullRequest?.assignees?.nodes ?? []) add(node, true);
+  for (const node of repository.assignableUsers?.nodes ?? []) add(node, false);
+  return Result.succeed({
+    candidates: [...candidates.values()],
+    truncated: repository.assignableUsers?.pageInfo?.hasNextPage === true,
   });
 }
 

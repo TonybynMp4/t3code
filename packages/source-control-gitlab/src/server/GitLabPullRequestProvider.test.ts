@@ -24,6 +24,7 @@ describe("gitLabViewerPermissions", () => {
       verdicts: ["comment", "approve"],
       // GitLab says nothing about who may set a reviewer, and an unreported permission is granted.
       requestReviewers: true,
+      assignees: true,
       // Rebase and nothing else: GitLab cannot merge a target branch into a source branch, so
       // offering the choice would be offering something no request could carry out.
       updateMethods: ["rebase"],
@@ -39,6 +40,7 @@ describe("gitLabViewerPermissions", () => {
       resolve: true,
       verdicts: ["comment", "approve"],
       requestReviewers: true,
+      assignees: true,
     });
   });
 
@@ -86,6 +88,7 @@ describe("getChangeRequest base freshness", () => {
     checks: [],
     viewerCanMerge: true,
     reviewerIds: [],
+    assigneeIds: [],
   };
 
   it.effect("reads checks without fetching project settings", () =>

@@ -1306,6 +1306,37 @@ layer("GitLabPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("assigns by adding to the assignee set, and clears it with GitLab's 0", () =>
+    Effect.gen(function* () {
+      const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(output(mergeRequestJson({ assignees: [reviewer] }))))
+        .mockReturnValueOnce(Effect.succeed(output("{}")));
+      yield* cli.setAssignees({
+        cwd: "/w",
+        repository: "acme/web",
+        number: 7,
+        assignees: ["9"],
+        assigned: true,
+      });
+      expect(argsOfCall(1)).toContain("PUT");
+      expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ assignee_ids: [5, 9] });
+
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(output(mergeRequestJson({ assignees: [reviewer] }))))
+        .mockReturnValueOnce(Effect.succeed(output("{}")));
+      yield* cli.setAssignees({
+        cwd: "/w",
+        repository: "acme/web",
+        number: 7,
+        assignees: ["5"],
+        assigned: false,
+      });
+      // An empty list would leave GitLab's assignees as they were.
+      expect(JSON.parse(callAt(3).stdin ?? "")).toEqual({ assignee_ids: [0] });
+    }),
+  );
+
   it.effect("rewrites a title without touching the description", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValue(Effect.succeed(output("{}")));

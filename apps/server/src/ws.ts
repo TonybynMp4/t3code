@@ -2575,6 +2575,10 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.labelCandidates(input)),
         [WS_METHODS.pullRequestsSetLabels]: (input) =>
           withPullRequestViewer(input, pullRequests.setLabels(input)),
+        [WS_METHODS.pullRequestsAssigneeCandidates]: (input) =>
+          withPullRequestViewer(input, pullRequests.assigneeCandidates(input)),
+        [WS_METHODS.pullRequestsSetAssignees]: (input) =>
+          withPullRequestViewer(input, pullRequests.setAssignees(input)),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>

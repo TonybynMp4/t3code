@@ -754,6 +754,7 @@ export function PullRequestDetailPanel({
                   requestReviewers: false,
                   updateMethods: [],
                   labels: false,
+                  assignees: false,
                 },
             author: activity?.author ?? coreDetail.author,
             reviewers: activity?.reviewers ?? coreDetail.reviewers,

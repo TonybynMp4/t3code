@@ -62,6 +62,8 @@ import {
   type PullRequestReviewerRequestInput,
   type PullRequestLabelCandidateList,
   type PullRequestLabelChangeInput,
+  type PullRequestAssigneeCandidateList,
+  type PullRequestAssigneeChangeInput,
   type PullRequestSetFilesViewedInput,
   type PullRequestState,
   type PullRequestSubmitReviewInput,
@@ -321,6 +323,12 @@ export class PullRequestService extends Context.Service<
     readonly setLabels: (
       input: PullRequestLabelChangeInput,
     ) => Effect.Effect<void, PullRequestError>;
+    readonly assigneeCandidates: (
+      input: PullRequestRef,
+    ) => Effect.Effect<PullRequestAssigneeCandidateList, PullRequestError>;
+    readonly setAssignees: (
+      input: PullRequestAssigneeChangeInput,
+    ) => Effect.Effect<void, PullRequestError>;
     readonly invalidate: (
       input: PullRequestInvalidateInput,
       options?: { readonly notifyReaders?: boolean },
@@ -368,6 +376,8 @@ const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
  */
 const REVIEWER_REQUEST_REFUSAL = "You need write access on this repository to ask for a review.";
 const LABEL_CHANGE_REFUSAL = "You need triage access on this repository to change its labels.";
+const ASSIGNEE_CHANGE_REFUSAL =
+  "You need triage access on this repository to change who it is assigned to.";
 
 /** A project this page can read: its remote is on a host with an implementation. */
 export interface SupportedProject {
@@ -691,6 +701,14 @@ function withRateLimitBackoff(
       ? {}
       : { listLabelCandidates: interactive("listLabelCandidates", api.listLabelCandidates) }),
     ...(api.setLabels === undefined ? {} : { setLabels: interactive("setLabels", api.setLabels) }),
+    ...(api.listAssigneeCandidates === undefined
+      ? {}
+      : {
+          listAssigneeCandidates: interactive("listAssigneeCandidates", api.listAssigneeCandidates),
+        }),
+    ...(api.setAssignees === undefined
+      ? {}
+      : { setAssignees: interactive("setAssignees", api.setAssignees) }),
     replyToThread: interactive("replyToThread", api.replyToThread),
     setReaction: interactive("setReaction", api.setReaction),
     setThreadResolution: interactive("setThreadResolution", api.setThreadResolution),
@@ -1825,6 +1843,9 @@ export const make = Effect.gen(function* () {
             mergedAt: changeRequest.mergedAt,
             closedAt: changeRequest.closedAt,
             reviewers: changeRequest.reviewers,
+            ...(changeRequest.assignees === undefined
+              ? {}
+              : { assignees: changeRequest.assignees }),
             labels: changeRequest.labels,
             checks: changeRequest.checks,
             mergeCapabilities: changeRequest.mergeCapabilities,
@@ -2588,6 +2609,76 @@ export const make = Effect.gen(function* () {
                   labels: input.labels,
                   applied: input.applied,
                 }).pipe(Effect.mapError(toPullRequestError("setLabels"))),
+          ),
+        );
+      }),
+    );
+
+  /** Guarded like the labels: the list is wanted only by somebody about to change it. */
+  const assigneeCandidates: PullRequestService["Service"]["assigneeCandidates"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap(
+        (project): Effect.Effect<PullRequestAssigneeCandidateList, PullRequestError> => {
+          const list = project.api.listAssigneeCandidates;
+          if (project.api.capabilities.assignees !== true || list === undefined) {
+            return Effect.fail(
+              new PullRequestOperationError({
+                operation: "assigneeCandidates",
+                detail: "This host cannot change who a change request is assigned to.",
+              }),
+            );
+          }
+          return viewerPermissionsOf(project, input, "assigneeCandidates").pipe(
+            Effect.flatMap(
+              (viewer): Effect.Effect<PullRequestAssigneeCandidateList, PullRequestError> =>
+                viewer.assignees === false
+                  ? Effect.fail(
+                      new PullRequestOperationError({
+                        operation: "assigneeCandidates",
+                        detail: ASSIGNEE_CHANGE_REFUSAL,
+                      }),
+                    )
+                  : list({
+                      cwd: project.project.workspaceRoot,
+                      repository: project.repository,
+                      host: project.host,
+                      number: input.number,
+                    }).pipe(Effect.mapError(toPullRequestError("assigneeCandidates"))),
+            ),
+          );
+        },
+      ),
+    );
+
+  const setAssignees: PullRequestService["Service"]["setAssignees"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
+        const change = project.api.setAssignees;
+        if (project.api.capabilities.assignees !== true || change === undefined) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "setAssignees",
+              detail: "This host cannot change who a change request is assigned to.",
+            }),
+          );
+        }
+        return viewerPermissionsOf(project, input, "setAssignees").pipe(
+          Effect.flatMap((viewer): Effect.Effect<void, PullRequestError> =>
+            viewer.assignees === false
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "setAssignees",
+                    detail: ASSIGNEE_CHANGE_REFUSAL,
+                  }),
+                )
+              : change({
+                  cwd: project.project.workspaceRoot,
+                  repository: project.repository,
+                  host: project.host,
+                  number: input.number,
+                  assignees: input.assignees,
+                  assigned: input.assigned,
+                }).pipe(Effect.mapError(toPullRequestError("setAssignees"))),
           ),
         );
       }),
@@ -3589,6 +3680,8 @@ export const make = Effect.gen(function* () {
     requestReviewers: invalidatedByMutation(requestReviewers),
     labelCandidates,
     setLabels: invalidatedByMutation(setLabels),
+    assigneeCandidates,
+    setAssignees: invalidatedByMutation(setAssignees),
     invalidate,
   });
 });

@@ -336,6 +336,25 @@ export const PullRequestLabelCandidateList = Schema.Struct({
 });
 export type PullRequestLabelCandidateList = typeof PullRequestLabelCandidateList.Type;
 
+/**
+ * Somebody the change request may be assigned to, with whether it already is. `id` is how the
+ * host addresses them when assigning: GitHub takes a login, GitLab a numeric user id.
+ */
+export const PullRequestAssigneeCandidate = Schema.Struct({
+  ...PullRequestActor.fields,
+  id: TrimmedNonEmptyString,
+  isAssigned: Schema.Boolean,
+});
+export type PullRequestAssigneeCandidate = typeof PullRequestAssigneeCandidate.Type;
+
+export const PullRequestAssigneeCandidateList = Schema.Struct({
+  /** Includes the author, whom every host lets a change request be assigned to. */
+  candidates: Schema.Array(PullRequestAssigneeCandidate),
+  /** The host has more assignable people than the read asked for; the list is not all of them. */
+  truncated: Schema.Boolean,
+});
+export type PullRequestAssigneeCandidateList = typeof PullRequestAssigneeCandidateList.Type;
+
 export const PullRequestCommit = Schema.Struct({
   oid: TrimmedNonEmptyString,
   messageHeadline: Schema.String,
@@ -467,6 +486,11 @@ export const PullRequestCapabilities = Schema.Struct({
    * to change them, which is what every server before this field was.
    */
   labels: Schema.optional(Schema.Boolean),
+  /**
+   * The people who may be assigned can be listed, and one assigned or unassigned. Optional for the
+   * same reason as `labels`.
+   */
+  assignees: Schema.optional(Schema.Boolean),
 });
 export type PullRequestCapabilities = typeof PullRequestCapabilities.Type;
 
@@ -504,6 +528,8 @@ export const PullRequestViewerPermissions = Schema.Struct({
    * changed on this host at all.
    */
   labels: Schema.optional(Schema.Boolean),
+  /** This viewer may assign somebody, and unassign them. Absent is granted, like `labels`. */
+  assignees: Schema.optional(Schema.Boolean),
   /**
    * This viewer may rewrite the change request's title and description. Absent where the host
    * doesn't say, which leaves the page to guess from authorship and merge access.
@@ -904,6 +930,8 @@ export const PullRequestDetail = Schema.Struct({
   mergedAt: Schema.NullOr(IsoDateTime),
   closedAt: Schema.NullOr(IsoDateTime),
   reviewers: Schema.Array(PullRequestActor),
+  /** Absent where the host does not report assignees: every host but GitHub and GitLab. */
+  assignees: Schema.optional(Schema.Array(PullRequestActor)),
   labels: Schema.Array(PullRequestLabel),
   checks: Schema.Array(PullRequestCheck),
   mergeCapabilities: PullRequestMergeCapabilities,
@@ -1300,6 +1328,18 @@ export const PullRequestLabelChangeInput = Schema.Struct({
   applied: Schema.Boolean,
 });
 export type PullRequestLabelChangeInput = typeof PullRequestLabelChangeInput.Type;
+
+/** Assigning and unassigning are one operation with `assigned` turned around, like labels. */
+export const PullRequestAssigneeChangeInput = Schema.Struct({
+  ...PullRequestRef.fields,
+  /** As the candidate list named them. GitHub refuses more than ten assignees. */
+  assignees: Schema.Array(TrimmedNonEmptyString).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(10),
+  ),
+  assigned: Schema.Boolean,
+});
+export type PullRequestAssigneeChangeInput = typeof PullRequestAssigneeChangeInput.Type;
 
 export const PullRequestUnavailableReason = Schema.Literals([
   "cli-missing",

@@ -31,6 +31,7 @@ import type {
   PullRequestReviewerCandidateList,
   PullRequestReviewerKind,
   PullRequestLabelCandidateList,
+  PullRequestAssigneeCandidateList,
   PullRequestState,
   PullRequestPreview,
   PullRequestUpdateMethod,
@@ -685,6 +686,23 @@ export interface PullRequestProviderApi {
       readonly number: number;
       readonly labels: ReadonlyArray<string>;
       readonly applied: boolean;
+    },
+  ) => Effect.Effect<void, PullRequestProviderError>;
+
+  /**
+   * The people the change request may be assigned to, with the current assignees marked. Present
+   * with `setAssignees` only where `capabilities.assignees` is true.
+   */
+  readonly listAssigneeCandidates?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<PullRequestAssigneeCandidateList, PullRequestProviderError>;
+
+  /** Assigns people by candidate id, or unassigns them. One call for both directions. */
+  readonly setAssignees?: (
+    input: ProviderRepositoryRef & {
+      readonly number: number;
+      readonly assignees: ReadonlyArray<string>;
+      readonly assigned: boolean;
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 

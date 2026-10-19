@@ -3647,6 +3647,60 @@ it.effect("hands a label change to the host, and reads the labels back for the m
   }),
 );
 
+it.effect("hands an assignment to the host only where the host and the viewer both allow it", () =>
+  Effect.gen(function* () {
+    const received: Array<{ assignees: ReadonlyArray<string>; assigned: boolean }> = [];
+    const github = SourceControlProviderKind.make("github");
+    const setup = (options: { capability: boolean; allowed: boolean }) =>
+      makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakeProvider(github, {
+            capabilities: {
+              ...fakeProvider(github).capabilities,
+              ...(options.capability ? { assignees: true } : {}),
+            },
+            getViewerPermissions: () =>
+              Effect.succeed({
+                actions: [],
+                comment: true,
+                resolve: false,
+                verdicts: [],
+                requestReviewers: false,
+                assignees: options.allowed,
+              }),
+            setAssignees: (input) => {
+              received.push({ assignees: input.assignees, assigned: input.assigned });
+              return Effect.void;
+            },
+          }),
+        ],
+      });
+    const change = {
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 4,
+      assignees: ["octocat"],
+      assigned: true,
+    };
+
+    const unsupported = yield* setup({ capability: false, allowed: true });
+    const unsupportedError = yield* Effect.flip(unsupported.setAssignees(change));
+    assert.include(unsupportedError.message, "cannot change who a change request is assigned to");
+
+    const refused = yield* setup({ capability: true, allowed: false });
+    const refusedError = yield* Effect.flip(refused.setAssignees(change));
+    assert.include(refusedError.message, "You need triage access on this repository");
+    assert.deepStrictEqual(received, []);
+
+    const allowed = yield* setup({ capability: true, allowed: true });
+    yield* allowed.setAssignees(change);
+    assert.deepStrictEqual(received, [{ assignees: ["octocat"], assigned: true }]);
+  }),
+);
+
 it.effect("answers a repeated listing from cache, and concurrent readers share one request", () =>
   Effect.gen(function* () {
     let hostCalls = 0;
