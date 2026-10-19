@@ -63,6 +63,7 @@ const RawMergeRequestSchema = Schema.Struct({
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
   closed_at: Schema.optional(Schema.NullOr(Schema.String)),
   reviewers: Schema.optional(Schema.NullOr(Schema.Array(RawUserSchema))),
+  assignees: Schema.optional(Schema.NullOr(Schema.Array(RawUserSchema))),
   labels: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   // A string, and "1000+" past GitLab's counting limit, so it is parsed rather than decoded.
   changes_count: Schema.optional(Schema.NullOr(Schema.String)),
@@ -220,6 +221,7 @@ export interface GitLabMergeRequestListItem {
   readonly updatedAt: string;
   readonly reviewRequestLogins: ReadonlyArray<string>;
   readonly labels: ReadonlyArray<PullRequestLabel>;
+  readonly assignees?: ReadonlyArray<PullRequestActor>;
 }
 
 export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
@@ -364,6 +366,10 @@ function toListItem(
       return login === null ? [] : [login];
     }),
     labels: toLabels(raw.labels),
+    assignees: (raw.assignees ?? []).flatMap((assignee) => {
+      const actor = toActor(assignee);
+      return actor === null ? [] : [actor];
+    }),
   };
 }
 

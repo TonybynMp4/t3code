@@ -19,6 +19,7 @@ import type {
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
 } from "@t3tools/contracts";
+import { resolvePullRequestAssigneeFilter } from "@t3tools/contracts";
 
 import * as GitLabCli from "./GitLabCli.ts";
 import {
@@ -232,6 +233,8 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly limit: number;
       /** Free text for GitLab's own `search`, which matches title and description. */
       readonly query?: string | undefined;
+      /** The list's assignee filter: a username, `me`, or `none`. */
+      readonly assignee?: string | undefined;
       /** Where to carry on from in GitLab's stable update-ordered row set. */
       readonly cursor?: ProviderListCursor | undefined;
     }) => Effect.Effect<GitLabMergeRequestListBatch, GitLabPullRequestCliError>;
@@ -472,6 +475,15 @@ function isCommitSha(value: string): boolean {
   return /^[0-9a-f]{7,64}$/i.test(value);
 }
 
+function assigneeParams(input: {
+  readonly assignee?: string | undefined;
+  readonly viewer: string;
+}): ReadonlyArray<readonly [string, string]> {
+  if (input.assignee === undefined) return [];
+  const username = resolvePullRequestAssigneeFilter(input.assignee, input.viewer);
+  return username === null ? [["assignee_id", "None"]] : [["assignee_username", username]];
+}
+
 function searchParams(search: string | undefined): ReadonlyArray<readonly [string, string]> {
   const trimmed = search?.trim() ?? "";
   return trimmed.length === 0 ? [] : [["search", trimmed]];
@@ -573,6 +585,7 @@ export const make = Effect.gen(function* () {
     readonly viewer: string;
     readonly limit: number;
     readonly query?: string | undefined;
+    readonly assignee?: string | undefined;
     readonly cursor?: ProviderListCursor | undefined;
     readonly page: number;
     readonly collected: ReadonlyArray<GitLabMergeRequestListItem>;
@@ -594,6 +607,7 @@ export const make = Effect.gen(function* () {
       path: `projects/${projectPath(input.repository)}/merge_requests?${query([
         ["state", stateParam(input.state)],
         ...involvementParams(input),
+        ...assigneeParams(input),
         // The listing is read through `glab api` rather than `glab mr list`, so the search is
         // the REST API's own `search` parameter — the one `mr list --search` passes on. It
         // matches title and description, and travels URL-encoded like every other value here,

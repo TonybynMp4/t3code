@@ -24,6 +24,7 @@ import {
   PullRequestUnavailableError,
   pullRequestHostOf,
   pullRequestProviderRequirement,
+  matchesPullRequestAssigneeFilter,
   resolvePullRequestAuthorFilter,
   type OrchestrationProjectShell,
   type ProjectId,
@@ -1207,7 +1208,8 @@ export const make = Effect.gen(function* () {
       (filters.excludedLabels === undefined || !filters.excludedLabels.some(holds)) &&
       (filters.author === undefined ||
         item.author?.login.toLowerCase() ===
-          resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase())
+          resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase()) &&
+      matchesPullRequestAssigneeFilter(item.assignees, filters.assignee, viewer)
     );
   };
 
@@ -1246,6 +1248,7 @@ export const make = Effect.gen(function* () {
         input.item.author?.login.toLowerCase() !== viewer &&
         input.item.reviewRequestLogins.some((login) => login.toLowerCase() === viewer),
       labels: input.item.labels,
+      ...(input.item.assignees === undefined ? {} : { assignees: input.item.assignees }),
       ...(input.item.reviewDecision === undefined || input.item.reviewDecision === null
         ? {}
         : { reviewDecision: input.item.reviewDecision }),
@@ -2880,7 +2883,7 @@ export const make = Effect.gen(function* () {
       string | ReadonlyArray<string> | ReadonlyArray<ReadonlyArray<string>> | null
     >,
   ): PullRequestListFilters => {
-    const [draft, review, checks, author, labels, excludedLabels] = slots;
+    const [draft, review, checks, author, labels, excludedLabels, assignee] = slots;
     return {
       ...(typeof draft === "string" ? { draft: draft as "only" | "hide" } : {}),
       ...(typeof review === "string" ? { review: review as PullRequestListFilters["review"] } : {}),
@@ -2888,6 +2891,7 @@ export const make = Effect.gen(function* () {
       ...(typeof author === "string" ? { author } : {}),
       ...(Array.isArray(labels) ? { labels: labels as ReadonlyArray<ReadonlyArray<string>> } : {}),
       ...(Array.isArray(excludedLabels) ? { excludedLabels } : {}),
+      ...(typeof assignee === "string" ? { assignee } : {}),
     };
   };
 
@@ -3022,6 +3026,7 @@ export const make = Effect.gen(function* () {
             input.filters.author ?? null,
             input.filters.labels ?? null,
             input.filters.excludedLabels ?? null,
+            input.filters.assignee ?? null,
           ],
       input.projectId ?? null,
       // Sorted so the same narrowing keys alike however the caller ordered it.

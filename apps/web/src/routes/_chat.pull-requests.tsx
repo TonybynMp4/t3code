@@ -346,6 +346,9 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     ...(typeof raw.author === "string" && raw.author.trim()
       ? { author: raw.author.trim().slice(0, 200) }
       : {}),
+    ...(typeof raw.assignee === "string" && raw.assignee.trim()
+      ? { assignee: raw.assignee.trim().slice(0, 200) }
+      : {}),
     ...pullRequestSearchLabels(raw.labels),
   }),
   component: PullRequestsRouteView,
@@ -555,6 +558,7 @@ function PullRequestsRouteView() {
             ...(next.review ? { review: next.review } : {}),
             ...(next.checks ? { checks: next.checks } : {}),
             ...(next.author ? { author: next.author } : {}),
+            ...(next.assignee ? { assignee: next.assignee } : {}),
             ...(next.labels && next.labels.length > 0 ? { labels: next.labels } : {}),
           };
         },
@@ -605,9 +609,10 @@ function PullRequestsRouteView() {
       ...(search.review ? { review: search.review } : {}),
       ...(search.checks ? { checks: search.checks } : {}),
       ...(search.author ? { author: search.author } : {}),
+      ...(search.assignee ? { assignee: search.assignee } : {}),
       ...(search.labels ? { labels: search.labels.map((label) => [label]) } : {}),
     }),
-    [search.author, search.checks, search.draft, search.labels, search.review],
+    [search.assignee, search.author, search.checks, search.draft, search.labels, search.review],
   );
   const menuFiltered = Object.keys(menuFilters).length > 0;
   // A typed qualifier wins over the menu's own answer for the same thing, since it is the more
@@ -688,7 +693,7 @@ function PullRequestsRouteView() {
     .map(([environmentId, revision]) => `${environmentId}:${revision}`)
     .join("|");
   // Page size is view state, not a URL concern: a shared link should open the first page.
-  const scopeKey = `${environmentKey}:${assignmentKey}:${search.state}:${search.involvement}:${scopedProjectId ?? ""}:${search.host ?? ""}:${search.draft ?? ""}:${search.review ?? ""}:${search.checks ?? ""}:${search.author ?? ""}:${search.labels?.join("\u0000") ?? ""}`;
+  const scopeKey = `${environmentKey}:${assignmentKey}:${search.state}:${search.involvement}:${scopedProjectId ?? ""}:${search.host ?? ""}:${search.draft ?? ""}:${search.review ?? ""}:${search.checks ?? ""}:${search.author ?? ""}:${search.assignee ?? ""}:${search.labels?.join("\u0000") ?? ""}`;
   const filterKey = `${scopeKey}:${sentQuery}`;
   const statsScopeRef = useRef<PullRequestStatsScope>({ key: filterKey, policy: statsPolicy });
   statsScopeRef.current = { key: filterKey, policy: statsPolicy };
@@ -2073,10 +2078,12 @@ function PullRequestsRouteView() {
           review: next.review,
           checks: next.checks,
           author: next.author,
+          assignee: next.assignee,
           labels: next.labels?.flatMap((group) => group),
         })
       }
       authorOptions={facets.authors}
+      assigneeOptions={facets.assignees}
       labelOptions={facets.labels}
       host={search.host}
       hostOptions={hostMenuOptions}

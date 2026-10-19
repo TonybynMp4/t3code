@@ -16,6 +16,8 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
+  matchesPullRequestAssigneeFilter,
+  resolvePullRequestAssigneeFilter,
   resolvePullRequestAuthorFilter,
   PositiveInt,
   TrimmedNonEmptyString,
@@ -871,12 +873,18 @@ function filterQualifiers(
     ...(filters.author === undefined
       ? []
       : [`author:${qualifierValue(resolvePullRequestAuthorFilter(filters.author, viewer))}`]),
+    ...(filters.assignee === undefined ? [] : [assigneeQualifier(filters.assignee, viewer)]),
     ...(filters.draft === undefined ? [] : [`draft:${filters.draft === "only"}`]),
     ...(filters.review === undefined ? [] : [`review:${REVIEW_QUALIFIERS[filters.review]}`]),
     ...(filters.checks === undefined
       ? []
       : [`status:${filters.checks === "passing" ? "success" : "failure"}`]),
   ];
+}
+
+function assigneeQualifier(assignee: string, viewer: string): string {
+  const login = resolvePullRequestAssigneeFilter(assignee, viewer);
+  return login === null ? "no:assignee" : `assignee:${qualifierValue(login)}`;
 }
 
 /**
@@ -906,7 +914,8 @@ function matchesFilters(
     (filters.excludedLabels === undefined || !filters.excludedLabels.some(holds)) &&
     (filters.author === undefined ||
       item.author?.login.toLowerCase() ===
-        resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase())
+        resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase()) &&
+    matchesPullRequestAssigneeFilter(item.assignees, filters.assignee, viewer)
   );
 }
 

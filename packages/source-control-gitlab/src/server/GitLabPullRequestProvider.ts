@@ -128,6 +128,7 @@ export const make = Effect.gen(function* () {
           viewer: input.viewer,
           limit: input.limit,
           query: input.query,
+          assignee: input.filters?.assignee,
           cursor: input.cursor,
         })
         .pipe(

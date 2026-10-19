@@ -11,6 +11,7 @@ import {
   PullRequestReviewerRequestInput,
   PullRequestSetFilesViewedInput,
   pullRequestHostOf,
+  matchesPullRequestAssigneeFilter,
   resolvePullRequestAuthorFilter,
 } from "./pullRequest.ts";
 
@@ -278,6 +279,26 @@ describe("naming the reader as the author to narrow by", () => {
   it("stands as typed where the host has not said who the reader is", () => {
     expect(resolvePullRequestAuthorFilter("me", null)).toBe("me");
     expect(resolvePullRequestAuthorFilter("me", "  ")).toBe("me");
+  });
+});
+
+describe("narrowing a row by its assignees", () => {
+  const octocat = [{ login: "Octocat" }];
+
+  it("matches a login, or me as the signed-in reader, case-insensitively", () => {
+    expect(matchesPullRequestAssigneeFilter(octocat, "octocat", "bilal")).toBe(true);
+    expect(matchesPullRequestAssigneeFilter(octocat, "me", "octocat")).toBe(true);
+    expect(matchesPullRequestAssigneeFilter(octocat, "me", "bilal")).toBe(false);
+  });
+
+  it("reads none as no assignee at all", () => {
+    expect(matchesPullRequestAssigneeFilter([], "none", "bilal")).toBe(true);
+    expect(matchesPullRequestAssigneeFilter(octocat, "None", "bilal")).toBe(false);
+  });
+
+  it("keeps a row whose host reports no assignees", () => {
+    expect(matchesPullRequestAssigneeFilter(undefined, "none", "bilal")).toBe(true);
+    expect(matchesPullRequestAssigneeFilter(undefined, "octocat", "bilal")).toBe(true);
   });
 });
 

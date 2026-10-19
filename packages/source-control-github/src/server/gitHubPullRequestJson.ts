@@ -194,6 +194,13 @@ const RawSearchItemSchema = Schema.Struct({
       }),
     ),
   ),
+  assignees: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        nodes: Schema.optional(Schema.NullOr(Schema.Array(Schema.NullOr(RawActorSchema)))),
+      }),
+    ),
+  ),
   /**
    * GraphQL answers the rollup a listing actually wants — one enum for the head commit, rather
    * than the whole check array `gh pr list --json` insists on. Measured at a hundred rows across
@@ -992,6 +999,7 @@ function pullRequestRowSelection(includeStacks: boolean, includeStats: boolean):
         repository { nameWithOwner }
         reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } }
         labels(first: 20) { nodes { name color } }
+        assignees(first: 10) { nodes { __typename login avatarUrl ... on User { name } } }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`;
 }
 
@@ -1331,6 +1339,8 @@ export interface GitHubPullRequestListItem {
   /** At least one outstanding request targets a team rather than an individual login. */
   readonly hasTeamReviewRequest: boolean;
   readonly labels: ReadonlyArray<PullRequestLabel>;
+  /** Only rows read through GraphQL carry them; `gh pr view --json` is not asked. */
+  readonly assignees?: ReadonlyArray<PullRequestActor>;
   /** Null where the head commit reported no checks, which is not the same as passing none. */
   readonly checksState: PullRequestChecksState | null;
 }
@@ -1862,6 +1872,10 @@ function toRow(
           const state = trimmed(commitNode?.commit?.statusCheckRollup?.state);
           return state === null ? [] : [{ state }];
         }),
+      }),
+      assignees: (node.assignees?.nodes ?? []).flatMap((assignee) => {
+        const actor = toActor(assignee);
+        return actor === null ? [] : [actor];
       }),
       ...(stack === undefined ? {} : { stack }),
     },

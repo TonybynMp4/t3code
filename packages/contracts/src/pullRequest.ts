@@ -64,6 +64,11 @@ export const PullRequestListFilters = Schema.Struct({
   excludedLabels: Schema.optional(PullRequestQualifierValues),
   /** One login, as `author:` names it. */
   author: Schema.optional(PullRequestQualifierValue),
+  /**
+   * One login as `assignee:` names it, `me` for the reader, or `none` for no assignee. Only
+   * GitHub and GitLab apply it; rows from a host that reports no assignees are left alone.
+   */
+  assignee: Schema.optional(PullRequestQualifierValue),
 });
 export type PullRequestListFilters = typeof PullRequestListFilters.Type;
 
@@ -556,6 +561,8 @@ export const PullRequestListEntry = Schema.Struct({
   observedAt: Schema.optional(Schema.Finite),
   viewerReviewRequested: Schema.Boolean,
   labels: Schema.Array(PullRequestLabel),
+  /** Absent where the host does not report assignees on its listings: every host but GitHub and GitLab. */
+  assignees: Schema.optional(Schema.Array(PullRequestActor)),
   /** Absent where the host does not summarise its reviews, which is every host but GitHub. */
   reviewDecision: Schema.optional(PullRequestReviewDecision),
   /** Absent where the host reports no check rollup, or the change request has no checks. */
@@ -1404,6 +1411,33 @@ export function resolvePullRequestAuthorFilter(
   const trimmed = author.trim();
   if (!/^@?me$/i.test(trimmed)) return trimmed;
   return viewer === null || viewer === undefined || viewer.trim().length === 0 ? trimmed : viewer;
+}
+
+/**
+ * The assignee filter as a login to look for, or null for "no assignee". `me` resolves like the
+ * author filter does.
+ */
+export function resolvePullRequestAssigneeFilter(
+  assignee: string,
+  viewer: string | null | undefined,
+): string | null {
+  return /^none$/i.test(assignee.trim()) ? null : resolvePullRequestAuthorFilter(assignee, viewer);
+}
+
+/**
+ * Whether a row's assignees satisfy the assignee filter. A row whose host reports no assignees
+ * (`undefined`) cannot be judged and is kept.
+ */
+export function matchesPullRequestAssigneeFilter(
+  assignees: ReadonlyArray<{ readonly login: string }> | undefined,
+  assignee: string | undefined,
+  viewer: string | null | undefined,
+): boolean {
+  if (assignee === undefined || assignees === undefined) return true;
+  const login = resolvePullRequestAssigneeFilter(assignee, viewer);
+  if (login === null) return assignees.length === 0;
+  const wanted = login.toLowerCase();
+  return assignees.some((actor) => actor.login.toLowerCase() === wanted);
 }
 
 /**

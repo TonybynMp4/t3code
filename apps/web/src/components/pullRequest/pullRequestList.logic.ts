@@ -5,6 +5,7 @@ import {
   PullRequestListEntry,
   PullRequestListProjectError,
   PullRequestListResult,
+  matchesPullRequestAssigneeFilter,
   resolvePullRequestAuthorFilter,
 } from "@t3tools/contracts";
 import type {
@@ -54,6 +55,11 @@ export interface PullRequestAuthorFacet {
   readonly mergedCount: number;
 }
 
+export interface PullRequestAssigneeFacet {
+  readonly actor: PullRequestActor;
+  readonly count: number;
+}
+
 export interface PullRequestLabelFacet extends PullRequestLabel {
   readonly count: number;
 }
@@ -93,6 +99,7 @@ export function collectPullRequestListFacets(
   state: PullRequestListState,
 ) {
   const authors = new Map<string, PullRequestAuthorFacet>();
+  const assignees = new Map<string, PullRequestAssigneeFacet>();
   const labels = new Map<string, PullRequestLabelFacet>();
   const uniqueEntries = new Map(entries.map((entry) => [pullRequestEntryKey(entry), entry]));
   for (const entry of uniqueEntries.values()) {
@@ -109,6 +116,12 @@ export function collectPullRequestListFacets(
       }
     }
     if (!inState) continue;
+    for (const actor of entry.assignees ?? []) {
+      const key = normalize(actor.login);
+      if (key === null) continue;
+      const held = assignees.get(key);
+      assignees.set(key, { actor: held?.actor ?? actor, count: (held?.count ?? 0) + 1 });
+    }
     for (const label of entry.labels) {
       const key = normalize(label.name);
       if (key === null) continue;
@@ -130,6 +143,10 @@ export function collectPullRequestListFacets(
           right.count - left.count ||
           left.actor.login.localeCompare(right.actor.login),
       ),
+    assignees: [...assignees.values()].toSorted(
+      (left, right) =>
+        right.count - left.count || left.actor.login.localeCompare(right.actor.login),
+    ),
     labels: [...labels.values()].toSorted(
       (left, right) => right.count - left.count || left.name.localeCompare(right.name),
     ),
@@ -216,8 +233,8 @@ function boundedNames(names: ReadonlyArray<string>): string[] {
 
 /**
  * A typed query split into the qualifiers the hosts can act on and the text that is left. Written
- * GitHub's way — `label:foo`, `-label:"needs design"`, `author:octocat`, `draft:true`,
- * `review:approved`, `status:success` — because a project's labels are its own and a menu cannot
+ * GitHub's way — `label:foo`, `-label:"needs design"`, `author:octocat`, `assignee:me`,
+ * `assignee:none`, `draft:true`, `review:approved`, `status:success` — because a project's labels are its own and a menu cannot
  * list them.
  *
  * A key this does not know is read as a label of that whole name: repositories namespace their
@@ -236,6 +253,7 @@ export function parsePullRequestQuery(raw: string): {
   const labels: string[][] = [];
   const excludedLabels: string[] = [];
   let author: string | undefined;
+  let assignee: string | undefined;
   let draft: PullRequestListFilters["draft"];
   let review: PullRequestListFilters["review"];
   let checks: PullRequestListFilters["checks"];
@@ -256,6 +274,10 @@ export function parsePullRequestQuery(raw: string): {
       case "author":
         if (negated) break;
         author = value.slice(0, MAX_QUALIFIER_LENGTH).trim();
+        continue;
+      case "assignee":
+        if (negated) break;
+        assignee = value.slice(0, MAX_QUALIFIER_LENGTH).trim();
         continue;
       case "draft":
         if (negated || (value.toLowerCase() !== "true" && value.toLowerCase() !== "false")) break;
@@ -304,6 +326,7 @@ export function parsePullRequestQuery(raw: string): {
         ? {}
         : { excludedLabels: excludedLabels.slice(0, MAX_QUALIFIER_VALUES) }),
       ...(author === undefined ? {} : { author }),
+      ...(assignee === undefined ? {} : { assignee }),
       ...(draft === undefined ? {} : { draft }),
       ...(review === undefined ? {} : { review }),
       ...(checks === undefined ? {} : { checks }),
@@ -394,7 +417,8 @@ export function matchesPullRequestFilters(
     (filters.excludedLabels === undefined || !filters.excludedLabels.some(holds)) &&
     (filters.author === undefined ||
       entry.author?.login.toLowerCase() ===
-        resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase())
+        resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase()) &&
+    matchesPullRequestAssigneeFilter(entry.assignees, filters.assignee, viewer)
   );
 }
 

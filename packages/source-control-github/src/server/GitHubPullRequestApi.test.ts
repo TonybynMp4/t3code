@@ -1698,6 +1698,41 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
+  it.effect("asks GitHub for the assignee, the reader for me, and no:assignee for none", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((call) =>
+        Effect.succeed(
+          call.kind === "graphql" && call.query.includes("pullRequests(")
+            ? emptyList()
+            : emptySearch(),
+        ),
+      );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const list = (assignee: string) =>
+        cli.listPullRequests({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          state: "open",
+          involvement: "all",
+          viewer: "bilal",
+          limit: 10,
+          filters: { assignee },
+        });
+
+      yield* list("me");
+      const second = mockedExecute.mock.calls.length;
+      yield* list("none");
+
+      expect(searchOfCall(0)).toBe(
+        'is:pr is:open assignee:"bilal" sort:updated-desc repo:acme/web',
+      );
+      expect(searchOfCall(second)).toBe(
+        "is:pr is:open no:assignee sort:updated-desc repo:acme/web",
+      );
+    }),
+  );
+
   it.effect("sends one label qualifier per group, its names joined the way GitHub ors them", () =>
     Effect.gen(function* () {
       mockedExecute.mockImplementation((call) =>
