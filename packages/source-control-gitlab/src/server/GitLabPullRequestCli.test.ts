@@ -1,4 +1,4 @@
-import { afterEach, assert, expect, it, vi } from "@effect/vitest";
+import { afterEach, assert, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
@@ -1184,4 +1184,121 @@ layer("GitLabPullRequestCli.layer", (it) => {
       assert.strictEqual(mockedExecute.mock.calls.length, 3);
     }),
   );
+
+  describe("the head pipeline's stages", () => {
+    const pipeline = {
+      status: "failed",
+      web_url: "https://gitlab.com/acme/web/-/pipelines/9",
+      source: "merge_request_event",
+    };
+    const stages = JSON.stringify({
+      data: {
+        project: {
+          mergeRequest: {
+            headPipeline: {
+              path: "/acme/web/-/pipelines/9",
+              stages: {
+                nodes: [
+                  { name: "build", status: "success", detailedStatus: { label: "passed" } },
+                  {
+                    name: "test",
+                    status: "failed",
+                    jobs: {
+                      nodes: [{ name: "unit", status: "FAILED", webPath: "/acme/web/-/jobs/3" }],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    function answer(graphql: Effect.Effect<ReturnType<typeof output>, GitLabCli.GitLabCliError>) {
+      mockedExecute.mockImplementation((request) =>
+        request.args[1] === "graphql"
+          ? graphql
+          : Effect.succeed(output(mergeRequestJson({ head_pipeline: pipeline }))),
+      );
+    }
+
+    const read = (includeStages: boolean) =>
+      GitLabPullRequestCli.GitLabPullRequestCli.pipe(
+        Effect.flatMap((cli) =>
+          cli.getMergeRequestDetail({
+            cwd: "/w",
+            repository: "group/acme/web",
+            number: 7,
+            includeStages,
+          }),
+        ),
+      );
+
+    it.effect("shows the stages, and the failed stage as its failed job", () =>
+      Effect.gen(function* () {
+        answer(Effect.succeed(output(stages)));
+
+        const detail = yield* read(true);
+
+        const graphql = mockedExecute.mock.calls.find(([call]) => call.args[1] === "graphql");
+        assert.isDefined(graphql);
+        expect(JSON.parse(graphql[0].stdin ?? "").variables).toEqual({
+          fullPath: "group/acme/web",
+          iid: "7",
+        });
+        expect(detail.checks).toEqual([
+          {
+            name: "build",
+            status: "success",
+            description: "passed",
+            url: "https://gitlab.com/acme/web/-/pipelines/9",
+          },
+          {
+            name: "test / unit",
+            status: "failure",
+            description: null,
+            url: "https://gitlab.com/acme/web/-/jobs/3",
+          },
+        ]);
+      }),
+    );
+
+    it.effect("keeps the pipeline check where the stages cannot be read", () =>
+      Effect.gen(function* () {
+        answer(
+          Effect.fail(
+            new GitLabCli.GitLabCliCommandError({
+              operation: "execute",
+              command: "glab",
+              cwd: "/w",
+              cause: new Error("graphql unavailable"),
+            }),
+          ),
+        );
+
+        const detail = yield* read(true);
+
+        expect(detail.checks).toEqual([
+          {
+            name: "Pipeline",
+            status: "failure",
+            description: "merge_request_event",
+            url: "https://gitlab.com/acme/web/-/pipelines/9",
+          },
+        ]);
+      }),
+    );
+
+    it.effect("asks for no stages when the caller only needs the merge request", () =>
+      Effect.gen(function* () {
+        answer(Effect.succeed(output(stages)));
+
+        const detail = yield* read(false);
+
+        expect(mockedExecute).toHaveBeenCalledTimes(1);
+        expect(detail.checks.map((check) => check.name)).toEqual(["Pipeline"]);
+      }),
+    );
+  });
 });

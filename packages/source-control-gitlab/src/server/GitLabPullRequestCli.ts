@@ -28,6 +28,7 @@ import type {
 import * as GitLabCli from "./GitLabCli.ts";
 import {
   AWARD_EMOJI_GRAPHQL_QUERY,
+  PIPELINE_STAGES_GRAPHQL_QUERY,
   decodeAwardEmojiJson,
   decodeCommitDiffRefsJson,
   decodeCommitsJson,
@@ -39,6 +40,7 @@ import {
   decodeMergeRequestListJson,
   decodeNotesJson,
   decodeOwnAwardIdJson,
+  decodePipelineStageChecksJson,
   decodeProjectMergeCapabilitiesJson,
   decodeProjectLabelsJson,
   decodeProjectUsersJson,
@@ -235,6 +237,8 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly cwd: string;
       readonly repository: string;
       readonly number: number;
+      /** Shows the head pipeline as its stages, for the reads that show checks. */
+      readonly includeStages?: boolean | undefined;
     }) => Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError>;
 
     readonly listNotes: (input: {
@@ -898,7 +902,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const mergeRequestDetail = (input: {
+  const mergeRequestOnly = (input: {
     readonly cwd: string;
     readonly repository: string;
     readonly number: number;
@@ -923,6 +927,40 @@ export const make = Effect.gen(function* () {
             );
       }),
     );
+
+  /**
+   * The head pipeline's stages, read beside the merge request. Any failure to read them keeps
+   * the single pipeline check the merge request already carries.
+   */
+  const mergeRequestDetail = (input: {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly number: number;
+    readonly includeStages?: boolean | undefined;
+  }): Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError> => {
+    if (input.includeStages !== true) return mergeRequestOnly(input);
+    const stages = api({
+      cwd: input.cwd,
+      path: "graphql",
+      method: "POST",
+      stdin: JSON.stringify({
+        query: PIPELINE_STAGES_GRAPHQL_QUERY,
+        variables: { fullPath: input.repository, iid: String(input.number) },
+      }),
+    }).pipe(
+      Effect.map((result) => result.stdout.trim()),
+      Effect.orElseSucceed(() => null),
+    );
+    return Effect.all([mergeRequestOnly(input), stages], { concurrency: 2 }).pipe(
+      Effect.map(([detail, stagesJson]) => {
+        if (stagesJson === null || !URL.canParse(detail.url)) return detail;
+        const checks = decodePipelineStageChecksJson(stagesJson, new URL(detail.url).origin);
+        return Result.isSuccess(checks) && checks.success !== null
+          ? { ...detail, checks: checks.success }
+          : detail;
+      }),
+    );
+  };
 
   const projectUsers = (input: {
     readonly cwd: string;

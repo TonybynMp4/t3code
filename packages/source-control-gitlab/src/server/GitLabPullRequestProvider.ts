@@ -138,7 +138,7 @@ export const make = Effect.gen(function* () {
         ),
 
     getChangeRequestChecks: (input) =>
-      cli.getMergeRequestDetail(input).pipe(
+      cli.getMergeRequestDetail({ ...input, includeStages: true }).pipe(
         Effect.map(({ state, checks }) => ({ state, checks })),
         Effect.mapError(fail("getChangeRequestChecks")),
       ),
@@ -153,7 +153,7 @@ export const make = Effect.gen(function* () {
     getChangeRequest: (input) =>
       Effect.all(
         [
-          cli.getMergeRequestDetail(input),
+          cli.getMergeRequestDetail({ ...input, includeStages: true }),
           cli.getProjectMergeCapabilities({ cwd: input.cwd, repository: input.repository }),
         ],
         { concurrency: 2 },
