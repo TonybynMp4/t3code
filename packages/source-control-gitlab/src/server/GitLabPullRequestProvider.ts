@@ -151,26 +151,31 @@ export const make = Effect.gen(function* () {
         [
           cli.getMergeRequestDetail(input),
           cli.getProjectMergeCapabilities({ cwd: input.cwd, repository: input.repository }),
+          // A GitLab too old to answer leaves the menu without a limit, as before it was read.
+          recoverRead(cli.getAssigneeLimit(input), null),
         ],
-        { concurrency: 2 },
+        { concurrency: 3 },
       ).pipe(
         Effect.mapError(fail("getChangeRequest")),
-        Effect.map(([mergeRequest, mergeCapabilities]): ProviderChangeRequestDetail => ({
-          ...mergeRequest,
-          mergeCapabilities,
-          viewerPermissions: gitLabViewerPermissions(mergeRequest),
-          // A GitLab too old to count the divergence says nothing here rather than "up to
-          // date": the banner is worth missing, and a wrong all-clear is not worth showing.
-          baseComparison:
-            mergeRequest.divergedCommits === undefined
-              ? "unknown"
-              : mergeRequest.divergedCommits > 0
-                ? "behind"
-                : "up-to-date",
-          ...(mergeRequest.divergedCommits === undefined
-            ? {}
-            : { behindBy: mergeRequest.divergedCommits }),
-        })),
+        Effect.map(
+          ([mergeRequest, mergeCapabilities, assigneeLimit]): ProviderChangeRequestDetail => ({
+            ...mergeRequest,
+            ...(assigneeLimit === null ? {} : { assigneeLimit }),
+            mergeCapabilities,
+            viewerPermissions: gitLabViewerPermissions(mergeRequest),
+            // A GitLab too old to count the divergence says nothing here rather than "up to
+            // date": the banner is worth missing, and a wrong all-clear is not worth showing.
+            baseComparison:
+              mergeRequest.divergedCommits === undefined
+                ? "unknown"
+                : mergeRequest.divergedCommits > 0
+                  ? "behind"
+                  : "up-to-date",
+            ...(mergeRequest.divergedCommits === undefined
+              ? {}
+              : { behindBy: mergeRequest.divergedCommits }),
+          }),
+        ),
       ),
 
     getChangeRequestActivity: (input) =>
@@ -257,15 +262,32 @@ export const make = Effect.gen(function* () {
         .pipe(Effect.mapError(fail("listAssigneeCandidates"))),
 
     setAssignees: (input) =>
-      cli
-        .setAssignees({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          assignees: input.assignees,
-          assigned: input.assigned,
-        })
-        .pipe(Effect.mapError(fail("setAssignees"))),
+      recoverRead(cli.getAssigneeLimit(input), null).pipe(
+        Effect.mapError(fail("setAssignees")),
+        Effect.flatMap((limit) =>
+          // GitLab keeps the first of too many and drops the rest without saying so.
+          limit !== null && input.assignees.length > limit
+            ? Effect.fail(
+                new PullRequestProviderError({
+                  provider: SourceControlProviderKind.make("gitlab"),
+                  operation: "setAssignees",
+                  reason: "failed",
+                  detail:
+                    limit === 1
+                      ? "This merge request can have only one assignee."
+                      : `This merge request can have at most ${limit} assignees.`,
+                }),
+              )
+            : cli
+                .setAssignees({
+                  cwd: input.cwd,
+                  repository: input.repository,
+                  number: input.number,
+                  assignees: input.assignees,
+                })
+                .pipe(Effect.mapError(fail("setAssignees"))),
+        ),
+      ),
 
     runAction: (input) =>
       cli

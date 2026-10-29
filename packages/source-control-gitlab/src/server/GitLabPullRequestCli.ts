@@ -26,7 +26,9 @@ import { resolvePullRequestAssigneeFilter } from "@t3tools/contracts";
 import * as GitLabCli from "./GitLabCli.ts";
 import {
   AWARD_EMOJI_GRAPHQL_QUERY,
+  ASSIGNEE_POLICY_GRAPHQL_QUERY,
   decodeAwardEmojiJson,
+  decodeAssigneeLimitJson,
   decodeCommitDiffRefsJson,
   decodeCommitsJson,
   decodeDiffRefsJson,
@@ -297,13 +299,19 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly query?: string | undefined;
     }) => Effect.Effect<PullRequestAssigneeCandidateList, GitLabPullRequestCliError>;
 
+    /** The most people this merge request keeps assigned, or null where GitLab did not say. */
+    readonly getAssigneeLimit: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly number: number;
+    }) => Effect.Effect<number | null, GitLabPullRequestCliError>;
+
+    /** Replaces the assignees with these numeric user ids, as the candidate list named them. */
     readonly setAssignees: (input: {
       readonly cwd: string;
       readonly repository: string;
       readonly number: number;
-      /** Numeric user ids, as the candidate list named them. */
       readonly assignees: ReadonlyArray<string>;
-      readonly assigned: boolean;
     }) => Effect.Effect<void, GitLabPullRequestCliError>;
 
     readonly runMergeRequestAction: (input: {
@@ -1334,31 +1342,44 @@ export const make = Effect.gen(function* () {
         }),
       ),
 
-    setAssignees: (input) =>
-      mergeRequestDetail(input).pipe(
-        Effect.flatMap((mergeRequest) => {
-          // Like `reviewer_ids`, `assignee_ids` replaces the whole set.
-          const current = mergeRequest.assigneeIds;
-          const chosen = input.assignees.flatMap((assignee) => {
-            const id = Number(assignee);
-            return Number.isSafeInteger(id) && id > 0 ? [id] : [];
-          });
-          // Newcomers go first: where the instance allows a single assignee (GitLab Free), it
-          // keeps the first id and drops the rest, so assigning somebody replaces the assignee
-          // instead of being silently thrown away.
-          const ids = input.assigned
-            ? [...new Set([...chosen, ...current])]
-            : current.filter((id) => !chosen.includes(id));
-          return api({
-            cwd: input.cwd,
-            path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
-            method: "PUT",
-            // An empty list leaves the assignees untouched; `0` is how GitLab clears them.
-            stdin: JSON.stringify({ assignee_ids: ids.length === 0 ? [0] : ids }),
-          });
+    getAssigneeLimit: (input) =>
+      api({
+        cwd: input.cwd,
+        path: "graphql",
+        method: "POST",
+        stdin: JSON.stringify({
+          query: ASSIGNEE_POLICY_GRAPHQL_QUERY,
+          variables: { fullPath: input.repository, iid: String(input.number) },
         }),
-        Effect.asVoid,
+      }).pipe(
+        Effect.flatMap((result) => {
+          const decoded = decodeAssigneeLimitJson(result.stdout.trim());
+          return Result.isSuccess(decoded)
+            ? Effect.succeed(decoded.success)
+            : Effect.fail(
+                new GitLabMergeRequestReadError({
+                  command: "glab",
+                  cwd: input.cwd,
+                  operation: "getAssigneeLimit",
+                  cause: decoded.failure,
+                }),
+              );
+        }),
       ),
+
+    setAssignees: (input) => {
+      const ids = input.assignees.flatMap((assignee) => {
+        const id = Number(assignee);
+        return Number.isSafeInteger(id) && id > 0 ? [id] : [];
+      });
+      return api({
+        cwd: input.cwd,
+        path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
+        method: "PUT",
+        // `assignee_ids` replaces the whole set. An empty list leaves it untouched; `0` clears it.
+        stdin: JSON.stringify({ assignee_ids: ids.length === 0 ? [0] : ids }),
+      }).pipe(Effect.asVoid);
+    },
 
     runMergeRequestAction: Effect.fn("GitLabPullRequestCli.runMergeRequestAction")(
       function* (input) {

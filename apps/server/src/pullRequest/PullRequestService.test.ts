@@ -3824,7 +3824,7 @@ it.effect("expands only files the change request changes, across every slice of 
 
 it.effect("hands an assignment to the host only where the host and the viewer both allow it", () =>
   Effect.gen(function* () {
-    const received: Array<{ assignees: ReadonlyArray<string>; assigned: boolean }> = [];
+    const received: Array<ReadonlyArray<string>> = [];
     const github = SourceControlProviderKind.make("github");
     const setup = (options: { capability: boolean; allowed: boolean }) =>
       makeService({
@@ -3847,7 +3847,7 @@ it.effect("hands an assignment to the host only where the host and the viewer bo
                 assignees: options.allowed,
               }),
             setAssignees: (input) => {
-              received.push({ assignees: input.assignees, assigned: input.assigned });
+              received.push(input.assignees);
               return Effect.void;
             },
           }),
@@ -3858,7 +3858,6 @@ it.effect("hands an assignment to the host only where the host and the viewer bo
       repository: "acme/web",
       number: 4,
       assignees: ["octocat"],
-      assigned: true,
     };
 
     const unsupported = yield* setup({ capability: false, allowed: true });
@@ -3872,6 +3871,6 @@ it.effect("hands an assignment to the host only where the host and the viewer bo
 
     const allowed = yield* setup({ capability: true, allowed: true });
     yield* allowed.setAssignees(change);
-    assert.deepStrictEqual(received, [{ assignees: ["octocat"], assigned: true }]);
+    assert.deepStrictEqual(received, [["octocat"]]);
   }),
 );

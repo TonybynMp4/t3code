@@ -1618,6 +1618,9 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.assignees === undefined
               ? {}
               : { assignees: changeRequest.assignees }),
+            ...(changeRequest.assigneeLimit === undefined
+              ? {}
+              : { assigneeLimit: changeRequest.assigneeLimit }),
             labels: changeRequest.labels,
             checks: changeRequest.checks,
             mergeCapabilities: changeRequest.mergeCapabilities,
@@ -2439,7 +2442,6 @@ export const make = Effect.gen(function* () {
                   host: project.host,
                   number: input.number,
                   assignees: input.assignees,
-                  assigned: input.assigned,
                 }).pipe(Effect.mapError(toPullRequestError("setAssignees"))),
           ),
         );

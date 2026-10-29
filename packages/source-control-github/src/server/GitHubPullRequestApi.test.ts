@@ -3593,28 +3593,25 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("assigns and unassigns through the issue's assignees collection", () =>
+  it.effect("replaces the assignees by editing the pull request's issue", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
       const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-      const input = {
+
+      yield* cli.setAssignees({
         cwd: "/w",
         repository: "acme/web",
         host: "github.com",
         number: 7,
-        assignees: ["octocat"],
-      };
-
-      yield* cli.setAssignees({ ...input, assigned: true });
-      yield* cli.setAssignees({ ...input, assigned: false });
+        assignees: [],
+      });
 
       expect(callAt(0)).toMatchObject({
         kind: "rest",
-        method: "POST",
-        path: "repos/acme/web/issues/7/assignees",
-        body: { assignees: ["octocat"] },
+        method: "PATCH",
+        path: "repos/acme/web/issues/7",
+        body: { assignees: [] },
       });
-      expect(callAt(1)).toMatchObject({ kind: "rest", method: "DELETE" });
     }),
   );
 

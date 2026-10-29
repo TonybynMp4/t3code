@@ -602,50 +602,38 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       concurrency: serialPerEnvironment,
       onSuccess: (target, registry) =>
         Effect.sync(() => {
-          const { assignees, assigned } = target.input;
+          const ids = new Set(target.input.assignees);
           const candidatesAtom = assigneeCandidates(target);
           const candidates = Option.getOrNull(AsyncResult.value(registry.get(candidatesAtom)));
-          const ids = new Set(assignees);
-          const selected =
-            candidates?.candidates.filter((candidate) => ids.has(candidate.id)) ?? [];
-          // Both are patched at once and then read again: a GitLab that allows one assignee
-          // replaces the one already there, and somebody found only by the host's search is not
-          // in the candidates to patch.
+          const chosen = candidates?.candidates.filter((candidate) => ids.has(candidate.id)) ?? [];
+          // Both are patched and then read again. Somebody found only by the host's search is not
+          // in the candidates, so then the detail waits for its read rather than dropping them.
           updateCached(
             registry,
             candidatesAtom,
             (value) => ({
               ...value,
-              candidates: value.candidates.map((candidate) =>
-                ids.has(candidate.id) ? { ...candidate, isAssigned: assigned } : candidate,
-              ),
+              candidates: value.candidates.map((candidate) => ({
+                ...candidate,
+                isAssigned: ids.has(candidate.id),
+              })),
             }),
             true,
           );
-          const logins = new Set(selected.map((candidate) => candidate.login.toLowerCase()));
           updateCached(
             registry,
             detail(target),
-            (value) => {
-              const current = value.assignees ?? [];
-              return {
-                ...value,
-                assignees: assigned
-                  ? [
-                      ...current,
-                      ...selected
-                        .filter(
-                          (candidate) =>
-                            !current.some(
-                              (actor) =>
-                                actor.login.toLowerCase() === candidate.login.toLowerCase(),
-                            ),
-                        )
-                        .map(({ login, name, avatarUrl }) => ({ login, name, avatarUrl })),
-                    ]
-                  : current.filter((actor) => !logins.has(actor.login.toLowerCase())),
-              };
-            },
+            (value) =>
+              chosen.length === ids.size
+                ? {
+                    ...value,
+                    assignees: chosen.map(({ login, name, avatarUrl }) => ({
+                      login,
+                      name,
+                      avatarUrl,
+                    })),
+                  }
+                : value,
             true,
           );
         }),

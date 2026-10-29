@@ -201,7 +201,7 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly viewerCanMerge: boolean;
   readonly reviewerIds: ReadonlyArray<number>;
-  /** Every assignee id, even one without a username to show, since writes replace the set. */
+  /** Every assignee id, even one without a username to show, so the menu marks them assigned. */
   readonly assigneeIds: ReadonlyArray<number>;
   /** The candidate list leads with these, since one page of project users need not reach them. */
   readonly assigneeUsers: ReadonlyArray<PullRequestActor & { readonly id: number }>;
@@ -712,6 +712,41 @@ const CONTENT_BY_GITLAB_AWARD: Readonly<Record<string, PullRequestReactionConten
 
 export function gitLabAwardName(content: PullRequestReactionContent): string {
   return GITLAB_AWARD_BY_CONTENT[content];
+}
+
+/**
+ * GitLab keeps one assignee unless the instance's tier allows more, and REST does not say which.
+ * GraphQL answers per merge request, which also covers a Free group on a paid instance.
+ */
+export const ASSIGNEE_POLICY_GRAPHQL_QUERY = `query($fullPath: ID!, $iid: String!) {
+  project(fullPath: $fullPath) { mergeRequest(iid: $iid) { allowsMultipleAssignees } }
+}`;
+
+/** What GitLab's `Issuable::MAX_NUMBER_OF_ASSIGNEES_OR_REVIEWERS` allows where several are. */
+const GITLAB_MAX_ASSIGNEES = 200;
+
+const decodeAssigneePolicy = decodeJsonResult(
+  Schema.Struct({
+    data: Schema.Struct({
+      project: Schema.NullOr(
+        Schema.Struct({
+          mergeRequest: Schema.NullOr(
+            Schema.Struct({
+              allowsMultipleAssignees: Schema.optional(Schema.NullOr(Schema.Boolean)),
+            }),
+          ),
+        }),
+      ),
+    }),
+  }),
+);
+
+/** The most people GitLab keeps assigned to this merge request, or null where it did not say. */
+export function decodeAssigneeLimitJson(raw: string): Result.Result<number | null, DecodeFailure> {
+  const decoded = decodeAssigneePolicy(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const allows = decoded.success.data.project?.mergeRequest?.allowsMultipleAssignees;
+  return Result.succeed(allows === true ? GITLAB_MAX_ASSIGNEES : allows === false ? 1 : null);
 }
 
 export const AWARD_EMOJI_GRAPHQL_QUERY = `query($fullPath: ID!, $iid: String!, $cursor: String) {

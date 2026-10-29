@@ -188,6 +188,7 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly mergedAt: string | null;
   readonly closedAt: string | null;
   readonly reviewers: ReadonlyArray<PullRequestActor>;
+  readonly assigneeLimit?: number;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly mergeCapabilities: PullRequestMergeCapabilities;
   readonly viewerPermissions: PullRequestViewerPermissions;
@@ -545,12 +546,14 @@ export interface PullRequestProviderApi {
     },
   ) => Effect.Effect<PullRequestAssigneeCandidateList, PullRequestProviderError>;
 
-  /** Assigns people by candidate id, or unassigns them. One call for both directions. */
+  /**
+   * Replaces everyone assigned with these candidate ids. Fails, rather than letting the host drop
+   * some of them, when they are more than the change request's `assigneeLimit`.
+   */
   readonly setAssignees?: (
     input: ProviderRepositoryRef & {
       readonly number: number;
       readonly assignees: ReadonlyArray<string>;
-      readonly assigned: boolean;
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 

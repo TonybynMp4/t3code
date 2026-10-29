@@ -672,10 +672,8 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly repository: string;
       readonly host: string;
       readonly number: number;
-      /** Logins, as the candidate list named them. */
+      /** Logins, as the candidate list named them, replacing whoever is assigned now. */
       readonly assignees: ReadonlyArray<string>;
-      /** False deletes the same collection an assignment posts to. */
-      readonly assigned: boolean;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
 
     readonly runPullRequestAction: (input: {
@@ -2406,13 +2404,13 @@ export const make = Effect.gen(function* () {
 
     setAssignees: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      // A pull request is an issue to the assignees API, which adds to and removes from the set.
+      // A pull request is an issue here, and editing its `assignees` replaces the whole set.
       return api
         .rest({
           host: input.host,
           operation: "setAssignees",
-          method: input.assigned ? "POST" : "DELETE",
-          path: `repos/${owner}/${name}/issues/${input.number}/assignees`,
+          method: "PATCH",
+          path: `repos/${owner}/${name}/issues/${input.number}`,
           body: { assignees: input.assignees },
         })
         .pipe(Effect.asVoid);

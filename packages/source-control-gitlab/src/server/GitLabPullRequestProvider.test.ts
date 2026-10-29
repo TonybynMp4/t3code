@@ -69,7 +69,10 @@ describe("getChangeRequest base freshness", () => {
     assigneeUsers: [],
   };
 
-  const readWith = (divergence: { readonly divergedCommits?: number }) =>
+  const readWith = (
+    divergence: { readonly divergedCommits?: number },
+    assigneeLimit: number | null = null,
+  ) =>
     Effect.gen(function* () {
       const provider = yield* make;
       return yield* provider.getChangeRequest({
@@ -84,6 +87,7 @@ describe("getChangeRequest base freshness", () => {
           getMergeRequestDetail: () => Effect.succeed({ ...detail, ...divergence }),
           getProjectMergeCapabilities: () =>
             Effect.succeed({ merge: true, squash: true, rebase: true }),
+          getAssigneeLimit: () => Effect.succeed(assigneeLimit),
         }),
       ),
     );
@@ -97,12 +101,57 @@ describe("getChangeRequest base freshness", () => {
     }),
   );
 
+  it.effect("carries the assignee limit GitLab reported, and none where it did not", () =>
+    Effect.gen(function* () {
+      expect((yield* readWith({}, 1)).assigneeLimit).toBe(1);
+      expect((yield* readWith({})).assigneeLimit).toBeUndefined();
+    }),
+  );
+
   it.effect("says nothing at all where GitLab counted nothing", () =>
     Effect.gen(function* () {
       const changeRequest = yield* readWith({});
 
       expect(changeRequest.baseComparison).toBe("unknown");
       expect(changeRequest.behindBy).toBeUndefined();
+    }),
+  );
+});
+
+describe("assignee limit", () => {
+  const reference = { cwd: "/w", repository: "acme/web", host: "gitlab.com", number: 7 };
+  const assignWith = (limit: number | null, assignees: ReadonlyArray<string>) => {
+    const sent: Array<ReadonlyArray<string>> = [];
+    return Effect.gen(function* () {
+      const provider = yield* make;
+      const exit = yield* Effect.exit(provider.setAssignees!({ ...reference, assignees }));
+      return { exit, sent };
+    }).pipe(
+      Effect.provide(
+        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
+          getAssigneeLimit: () => Effect.succeed(limit),
+          setAssignees: (input) =>
+            Effect.sync(() => {
+              sent.push(input.assignees);
+            }),
+        }),
+      ),
+    );
+  };
+
+  it.effect("refuses more assignees than the merge request keeps, rather than lose some", () =>
+    Effect.gen(function* () {
+      const { exit, sent } = yield* assignWith(1, ["9", "5"]);
+
+      expect(exit._tag).toBe("Failure");
+      expect(sent).toEqual([]);
+    }),
+  );
+
+  it.effect("sends a set within the limit, or any set where GitLab did not say", () =>
+    Effect.gen(function* () {
+      expect((yield* assignWith(1, ["9"])).sent).toEqual([["9"]]);
+      expect((yield* assignWith(null, ["9", "5"])).sent).toEqual([["9", "5"]]);
     }),
   );
 });

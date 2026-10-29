@@ -735,7 +735,10 @@ export function PullRequestSummaryTab({
             </span>
           </MetaRow>
           {(detail.assignees?.length ?? 0) > 0 || detail.capabilities.assignees === true ? (
-            <MetaRow icon={<UserRoundCheckIcon className="size-3.5" />} label="Assignees">
+            <MetaRow
+              icon={<UserRoundCheckIcon className="size-3.5" />}
+              label={detail.assigneeLimit === 1 ? "Assignee" : "Assignees"}
+            >
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 {(detail.assignees ?? []).length === 0 ? (
                   <span className="text-muted-foreground">None</span>
@@ -756,6 +759,7 @@ export function PullRequestSummaryTab({
                     environmentId={environmentId}
                     reference={reference}
                     allowed={detail.viewerPermissions.assignees !== false}
+                    limit={detail.assigneeLimit}
                   />
                 ) : null}
               </span>

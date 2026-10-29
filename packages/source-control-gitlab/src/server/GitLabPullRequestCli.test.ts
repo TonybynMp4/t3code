@@ -1242,57 +1242,52 @@ layer("GitLabPullRequestCli.layer", (it) => {
     }),
   );
 
-  it.effect("assigns by adding to the assignee set, and clears it with GitLab's 0", () =>
+  it.effect("replaces the assignee set, and clears it with GitLab's 0", () =>
     Effect.gen(function* () {
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
-      mockedExecute
-        .mockReturnValueOnce(Effect.succeed(output(mergeRequestJson({ assignees: [reviewer] }))))
-        .mockReturnValueOnce(Effect.succeed(output("{}")));
-      yield* cli.setAssignees({
-        cwd: "/w",
-        repository: "acme/web",
-        number: 7,
-        assignees: ["9"],
-        assigned: true,
-      });
-      expect(argsOfCall(1)).toContain("PUT");
-      // The newcomer leads: a GitLab that allows one assignee keeps only the first id, so
-      // assigning replaces the assignee there rather than being dropped.
-      expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ assignee_ids: [9, 5] });
+      mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+      const input = { cwd: "/w", repository: "acme/web", number: 7 };
 
-      mockedExecute
-        .mockReturnValueOnce(Effect.succeed(output(mergeRequestJson({ assignees: [reviewer] }))))
-        .mockReturnValueOnce(Effect.succeed(output("{}")));
-      yield* cli.setAssignees({
-        cwd: "/w",
-        repository: "acme/web",
-        number: 7,
-        assignees: ["5"],
-        assigned: false,
-      });
+      yield* cli.setAssignees({ ...input, assignees: ["9", "5"] });
+      expect(argsOfCall(0)).toContain("PUT");
+      expect(JSON.parse(callAt(0).stdin ?? "")).toEqual({ assignee_ids: [9, 5] });
+
+      yield* cli.setAssignees({ ...input, assignees: [] });
       // An empty list would leave GitLab's assignees as they were.
-      expect(JSON.parse(callAt(3).stdin ?? "")).toEqual({ assignee_ids: [0] });
+      expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ assignee_ids: [0] });
     }),
   );
 
-  it.effect("keeps an assignee it cannot show when writing the set back", () =>
+  it.effect("reads how many assignees the merge request keeps from GraphQL", () =>
     Effect.gen(function* () {
-      mockedExecute
-        .mockReturnValueOnce(
-          Effect.succeed(output(mergeRequestJson({ assignees: [{ id: 3, username: "" }] }))),
-        )
-        .mockReturnValueOnce(Effect.succeed(output("{}")));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+      const policy = (allowsMultipleAssignees?: boolean) =>
+        Effect.succeed(
+          output(
+            JSON.stringify({
+              data: {
+                project: {
+                  mergeRequest:
+                    allowsMultipleAssignees === undefined ? {} : { allowsMultipleAssignees },
+                },
+              },
+            }),
+          ),
+        );
+      mockedExecute
+        .mockReturnValueOnce(policy(false))
+        .mockReturnValueOnce(policy(true))
+        .mockReturnValueOnce(policy());
+      const input = { cwd: "/w", repository: "acme/web", number: 7 };
 
-      yield* cli.setAssignees({
-        cwd: "/w",
-        repository: "acme/web",
-        number: 7,
-        assignees: ["9"],
-        assigned: true,
+      expect(yield* cli.getAssigneeLimit(input)).toBe(1);
+      expect(yield* cli.getAssigneeLimit(input)).toBe(200);
+      // A GitLab without the field leaves the menu unlimited, as it was before the read.
+      expect(yield* cli.getAssigneeLimit(input)).toBeNull();
+      expect(JSON.parse(callAt(0).stdin ?? "").variables).toEqual({
+        fullPath: "acme/web",
+        iid: "7",
       });
-
-      expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ assignee_ids: [9, 3] });
     }),
   );
 });

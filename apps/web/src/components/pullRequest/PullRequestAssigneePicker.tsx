@@ -2,13 +2,20 @@ import { useAtomCommand } from "~/state/use-atom-command";
 /**
  * Assigning someone, from the row that says who is already assigned. The people who may be
  * assigned are read only once this menu opens, for the same reason as the reviewer picker.
+ * Picks are held until the menu closes and then sent as one set, as GitLab's own menu does, so
+ * the host's limit is checked against everyone at once rather than one click at a time.
  */
 import type {
   EnvironmentId,
   PullRequestAssigneeCandidate,
   PullRequestRef,
 } from "@t3tools/contracts";
-import { mergeAssigneeCandidates } from "@t3tools/client-runtime/pull-request-assignees";
+import {
+  assigneeDraftChange,
+  isAssigneeDraftFull,
+  mergeAssigneeCandidates,
+  toggleAssigneeDraft,
+} from "@t3tools/client-runtime/pull-request-assignees";
 import { CheckIcon, UserRoundPlusIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -26,15 +33,20 @@ export function PullRequestAssigneePicker({
   environmentId,
   reference,
   allowed,
+  limit,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   /** False where the host would refuse this account, shown disabled with the reason. */
   allowed: boolean;
+  /** How many people the host keeps assigned, where it has said. */
+  limit: number | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
+  // Null until the first pick, so the menu follows the assignees as they load until then.
+  const [draft, setDraft] = useState<ReadonlyArray<PullRequestAssigneeCandidate> | null>(null);
+  const [pending, setPending] = useState(false);
 
   const candidatesQuery = useEnvironmentQuery(
     open ? pullRequestEnvironment.assigneeCandidates({ environmentId, input: reference }) : null,
@@ -62,20 +74,25 @@ export function PullRequestAssigneePicker({
     query,
   );
 
-  const toggle = async (candidate: PullRequestAssigneeCandidate) => {
-    if (pending !== null) return;
-    setPending(candidate.id);
+  const assigned =
+    candidatesQuery.data?.candidates.filter((candidate) => candidate.isAssigned) ?? [];
+  const picked = draft ?? assigned;
+  const pickedIds = new Set(picked.map((candidate) => candidate.id));
+  const full = isAssigneeDraftFull(picked, limit);
+
+  const submit = async (next: ReadonlyArray<PullRequestAssigneeCandidate>) => {
+    const change = assigneeDraftChange(assigned, next);
+    if (change === null) return;
+    setPending(true);
     const result = await setAssignees({
       environmentId,
-      input: { ...reference, assignees: [candidate.id], assigned: !candidate.isAssigned },
+      input: { ...reference, assignees: next.map((candidate) => candidate.id) },
     });
-    setPending(null);
+    setPending(false);
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: candidate.isAssigned
-          ? `Could not unassign ${candidate.login}`
-          : `Could not assign ${candidate.login}`,
+        title: "Could not change the assignees",
         description: readableFailure(
           squashAtomCommandFailure(result),
           "The host refused it. Check that you have triage access on this repository, and that they still have access to it.",
@@ -83,13 +100,15 @@ export function PullRequestAssigneePicker({
       });
       return;
     }
-    // The command reads the loaded list again, but a search result is keyed by what was typed, so
-    // the one on screen is read here or it keeps showing the old assignment.
-    if (searchesHost) searchResult.refresh();
-    toastManager.add({
-      type: "success",
-      title: candidate.isAssigned ? `Unassigned ${candidate.login}` : `Assigned ${candidate.login}`,
-    });
+    toastManager.add({ type: "success", title: assigneeChangeTitle(change) });
+  };
+
+  const onOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) return;
+    setQuery("");
+    setDraft(null);
+    if (draft !== null) void submit(draft);
   };
 
   return (
@@ -99,7 +118,7 @@ export function PullRequestAssigneePicker({
       allowed={allowed}
       disabledReason="Assigning someone needs triage access on this repository"
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={onOpenChange}
       query={query}
       onQueryChange={setQuery}
       searchLabel="Search people who can be assigned"
@@ -135,17 +154,33 @@ export function PullRequestAssigneePicker({
             : "This repository has more people who can be assigned than are listed here. Search to find them."
       }
       candidateKey={(candidate) => candidate.id}
-      disabled={pending !== null}
-      onSelect={(candidate) => void toggle(candidate)}
+      disabled={pending}
+      candidateDisabled={(candidate) => full && !pickedIds.has(candidate.id)}
+      notice={
+        limit === 1
+          ? "Only one person can be assigned here, so a pick replaces them."
+          : full
+            ? `No more than ${limit} people can be assigned here.`
+            : null
+      }
+      onSelect={(candidate) => setDraft(toggleAssigneeDraft(picked, candidate, limit))}
     >
       {(candidate) => (
         <>
           <PullRequestActorLabel actor={candidate} className="flex-1" />
-          {candidate.isAssigned ? (
+          {pickedIds.has(candidate.id) ? (
             <CheckIcon aria-label="Assigned" className="size-3.5 shrink-0" />
           ) : null}
         </>
       )}
     </PullRequestCandidatePicker>
   );
+}
+
+function assigneeChangeTitle(change: NonNullable<ReturnType<typeof assigneeDraftChange>>): string {
+  const names = (people: ReadonlyArray<PullRequestAssigneeCandidate>) =>
+    people.map((person) => person.login).join(", ");
+  if (change.removed.length === 0) return `Assigned ${names(change.added)}`;
+  if (change.added.length === 0) return `Unassigned ${names(change.removed)}`;
+  return `Assigned ${names(change.added)}, unassigned ${names(change.removed)}`;
 }

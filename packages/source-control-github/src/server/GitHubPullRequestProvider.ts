@@ -26,6 +26,9 @@ import type {
 } from "./gitHubPullRequestJson.ts";
 import { definition } from "../client/definition.ts";
 
+/** GitHub keeps at most ten assignees on an issue or pull request. */
+const GITHUB_MAX_ASSIGNEES = 10;
+
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
   comment: true,
@@ -371,6 +374,7 @@ export const make = Effect.gen(function* () {
             })),
             ...pullRequest.reviewRequestTeams,
           ],
+          assigneeLimit: GITHUB_MAX_ASSIGNEES,
           mergeCapabilities: pullRequest.viewerAccess.mergeCapabilities,
           viewerPermissions: gitHubViewerPermissions({
             ...pullRequest.viewerAccess,
@@ -566,16 +570,24 @@ export const make = Effect.gen(function* () {
       cli.listAssigneeCandidates(input).pipe(Effect.mapError(fail("listAssigneeCandidates"))),
 
     setAssignees: (input) =>
-      cli
-        .setAssignees({
-          cwd: input.cwd,
-          repository: input.repository,
-          host: input.host,
-          number: input.number,
-          assignees: input.assignees,
-          assigned: input.assigned,
-        })
-        .pipe(Effect.mapError(fail("setAssignees"))),
+      input.assignees.length > GITHUB_MAX_ASSIGNEES
+        ? Effect.fail(
+            new PullRequestProviderError({
+              provider: SourceControlProviderKind.make("github"),
+              operation: "setAssignees",
+              reason: "failed",
+              detail: `A pull request can have at most ${GITHUB_MAX_ASSIGNEES} assignees.`,
+            }),
+          )
+        : cli
+            .setAssignees({
+              cwd: input.cwd,
+              repository: input.repository,
+              host: input.host,
+              number: input.number,
+              assignees: input.assignees,
+            })
+            .pipe(Effect.mapError(fail("setAssignees"))),
 
     runAction: (input) =>
       cli

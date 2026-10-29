@@ -36,6 +36,8 @@ export function PullRequestCandidatePicker<T>({
   truncatedLabel,
   candidateKey,
   disabled,
+  candidateDisabled,
+  notice,
   onSelect,
   children,
 }: {
@@ -58,6 +60,10 @@ export function PullRequestCandidatePicker<T>({
   truncatedLabel: string;
   candidateKey: (candidate: T) => string;
   disabled: boolean;
+  /** Rows that cannot be picked right now, such as anybody new once a limit is reached. */
+  candidateDisabled?: (candidate: T) => boolean;
+  /** Shown under the rows, for a rule that shapes what picking does. */
+  notice?: string | null;
   onSelect: (candidate: T) => void;
   children: (candidate: T) => ReactNode;
 }) {
@@ -133,12 +139,13 @@ export function PullRequestCandidatePicker<T>({
                 hideIndicator
                 index={index}
                 value={keys[index]}
-                disabled={disabled}
+                disabled={disabled || candidateDisabled?.(candidate) === true}
               >
                 {children(candidate)}
               </ComboboxItem>
             ))
           )}
+          {notice ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{notice}</p> : null}
           {truncated ? (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">{truncatedLabel}</p>
           ) : null}

@@ -306,8 +306,8 @@ export const PullRequestCapabilities = Schema.Struct({
   stackActions: Schema.optional(Schema.Boolean),
   labels: Schema.optional(Schema.Boolean),
   /**
-   * The people who may be assigned can be listed, and one assigned or unassigned. Optional for the
-   * same reason as `labels`.
+   * The people who may be assigned can be listed, and the set replaced. Optional for the same
+   * reason as `labels`.
    */
   assignees: Schema.optional(Schema.Boolean),
 });
@@ -605,6 +605,11 @@ export const PullRequestDetail = Schema.Struct({
   reviewers: Schema.Array(PullRequestActor),
   /** Absent where the host does not report assignees: every host but GitHub and GitLab. */
   assignees: Schema.optional(Schema.Array(PullRequestActor)),
+  /**
+   * How many people the host keeps assigned at once: 1 on GitLab Free, which drops the rest.
+   * Absent where the host has not said, which the menu treats as no limit.
+   */
+  assigneeLimit: Schema.optional(PositiveInt),
   labels: Schema.Array(PullRequestLabel),
   checks: Schema.Array(PullRequestCheck),
   mergeCapabilities: PullRequestMergeCapabilities,
@@ -901,15 +906,14 @@ export const PullRequestAssigneeCandidatesInput = Schema.Struct({
 });
 export type PullRequestAssigneeCandidatesInput = typeof PullRequestAssigneeCandidatesInput.Type;
 
-/** Assigning and unassigning are one operation with `assigned` turned around, like labels. */
+/**
+ * Everyone who should be assigned once this lands, replacing whoever is now; empty unassigns
+ * everyone. The menu sends it once it closes, so a limit is checked against the whole set.
+ */
 export const PullRequestAssigneeChangeInput = Schema.Struct({
   ...PullRequestRef.fields,
-  /** As the candidate list named them. GitHub refuses more than ten assignees. */
-  assignees: Schema.Array(TrimmedNonEmptyString).check(
-    Schema.isMinLength(1),
-    Schema.isMaxLength(10),
-  ),
-  assigned: Schema.Boolean,
+  /** As the candidate list named them. GitLab refuses more than 200, the most of any host. */
+  assignees: Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(200)),
 });
 export type PullRequestAssigneeChangeInput = typeof PullRequestAssigneeChangeInput.Type;
 

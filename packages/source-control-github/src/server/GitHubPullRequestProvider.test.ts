@@ -63,6 +63,31 @@ it.effect("maps credential verification failures without relabeling operation fa
   }),
 );
 
+it.effect("refuses more than GitHub's ten assignees instead of sending them", () =>
+  Effect.gen(function* () {
+    const sent: Array<ReadonlyArray<string>> = [];
+    const provider = yield* make.pipe(
+      Effect.provide(
+        Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+          setAssignees: (input) =>
+            Effect.sync(() => {
+              sent.push(input.assignees);
+            }),
+        }),
+      ),
+    );
+    const reference = { cwd: "/w", repository: "acme/web", host: "github.com", number: 7 };
+    const people = (count: number) => Array.from({ length: count }, (_, index) => `user${index}`);
+
+    const refused = yield* Effect.flip(
+      provider.setAssignees!({ ...reference, assignees: people(11) }),
+    );
+    expect(refused.detail).toContain("at most 10");
+    yield* provider.setAssignees!({ ...reference, assignees: people(10) });
+    expect(sent.map((assignees) => assignees.length)).toEqual([10]);
+  }),
+);
+
 it.effect("advertises standalone branch deletion for source repository writers", () =>
   Effect.gen(function* () {
     let action: string | undefined;
