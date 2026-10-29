@@ -3404,7 +3404,9 @@ export function claudeApprovalPresentation(input: {
         ? "provider_check"
         : "ask_rule";
   return {
-    ...(reason === "" || reason === input.prompt ? {} : { reason }),
+    ...(reason === "" || reason === NodeUtil.stripVTControlCharacters(input.prompt).trim()
+      ? {}
+      : { reason }),
     ...(fullAccessOverride === undefined ? {} : { fullAccessOverride }),
     ...(input.callbackOptions.suppressAlwaysAllowRule === true
       ? { options: CLAUDE_NO_STANDING_GRANT_OPTIONS }
