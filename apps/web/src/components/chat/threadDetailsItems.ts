@@ -3,11 +3,11 @@ import type { ClientSettings } from "@t3tools/contracts";
 // Ids are stored in client settings, so never rename one.
 export const THREAD_DETAILS_ITEMS = [
   { id: "environment", label: "Environment and worktree", defaultVisible: true },
-  { id: "openIn", label: "Open in editor", defaultVisible: true },
-  { id: "scripts", label: "Project scripts", defaultVisible: true },
+  { id: "openIn", label: "Open in editor", defaultVisible: true, headerCapable: true },
+  { id: "scripts", label: "Project scripts", defaultVisible: true, headerCapable: true },
   { id: "branch", label: "Branch and pull request", defaultVisible: true },
-  { id: "gitActions", label: "Git actions", defaultVisible: true },
-  { id: "changes", label: "Changes", defaultVisible: true },
+  { id: "gitActions", label: "Git actions", defaultVisible: true, headerCapable: true },
+  { id: "changes", label: "Changes", defaultVisible: true, headerCapable: true },
   { id: "servers", label: "Servers", defaultVisible: true },
   { id: "automations", label: "Automations", defaultVisible: true },
   { id: "lineage", label: "Lineage", defaultVisible: true },
@@ -18,6 +18,10 @@ export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];
 export type ThreadDetailsVisibility = Readonly<Record<ThreadDetailsItemId, boolean>>;
 
 type ThreadDetailsItem = (typeof THREAD_DETAILS_ITEMS)[number];
+type ThreadHeaderItem = Extract<ThreadDetailsItem, { headerCapable: true }>;
+export const THREAD_HEADER_ITEMS = THREAD_DETAILS_ITEMS.filter(
+  (item): item is ThreadHeaderItem => "headerCapable" in item,
+);
 type ThreadDetailsItemSettings = Pick<
   ClientSettings,
   "threadDetailsItems" | "threadDetailsUsageEnabled"
@@ -49,12 +53,49 @@ export function setThreadDetailsItem(
   return visible === defaultVisible(item, settings) ? rest : { ...rest, [item.id]: visible };
 }
 
-export function isDefaultThreadDetailsVisibility(visibility: ThreadDetailsVisibility) {
-  return THREAD_DETAILS_ITEMS.every((item) => visibility[item.id] === item.defaultVisible);
+export function isDefaultThreadDetailsVisibility(
+  visibility: ThreadDetailsVisibility,
+  header: ThreadDetailsVisibility,
+) {
+  return THREAD_DETAILS_ITEMS.every(
+    (item) => visibility[item.id] === item.defaultVisible && !header[item.id],
+  );
+}
+
+/** Header items render there whether or not the card would show them. */
+export function resolveThreadHeaderItems(
+  settings: Pick<ClientSettings, "threadHeaderItems">,
+): ThreadDetailsVisibility {
+  return Object.fromEntries(
+    THREAD_DETAILS_ITEMS.map((item) => [
+      item.id,
+      "headerCapable" in item && settings.threadHeaderItems.includes(item.id),
+    ]),
+  ) as Record<ThreadDetailsItemId, boolean>;
+}
+
+export function resolveThreadDetailsCardItems(
+  settings: ThreadDetailsItemSettings & Pick<ClientSettings, "threadHeaderItems">,
+): ThreadDetailsVisibility {
+  const visibility = resolveThreadDetailsVisibility(settings);
+  const header = resolveThreadHeaderItems(settings);
+  return Object.fromEntries(
+    THREAD_DETAILS_ITEMS.map((item) => [item.id, visibility[item.id] && !header[item.id]]),
+  ) as Record<ThreadDetailsItemId, boolean>;
+}
+
+export function setThreadHeaderItem(
+  settings: Pick<ClientSettings, "threadHeaderItems">,
+  item: ThreadHeaderItem,
+  inHeader: boolean,
+): ClientSettings["threadHeaderItems"] {
+  const rest = settings.threadHeaderItems.filter((id) => id !== item.id);
+  return inHeader ? [...rest, item.id] : rest;
 }
 
 /** Also clears the retired Labs flag, so Usage returns to off. */
 export const RESET_THREAD_DETAILS_ITEMS = {
   threadDetailsItems: {},
+  threadHeaderItems: [],
   threadDetailsUsageEnabled: false,
 } satisfies Partial<ClientSettings>;

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  resolveThreadDetailsCardItems,
   resolveThreadDetailsVisibility,
+  resolveThreadHeaderItems,
   setThreadDetailsItem,
+  setThreadHeaderItem,
   THREAD_DETAILS_ITEMS,
+  THREAD_HEADER_ITEMS,
 } from "./threadDetailsItems";
 
 const usage = THREAD_DETAILS_ITEMS.find((item) => item.id === "usage")!;
 const servers = THREAD_DETAILS_ITEMS.find((item) => item.id === "servers")!;
+const openIn = THREAD_HEADER_ITEMS.find((item) => item.id === "openIn")!;
 
 describe("thread details items", () => {
   it.each([
@@ -31,5 +36,18 @@ describe("thread details items", () => {
 
     const hidden = { threadDetailsItems: { servers: false }, threadDetailsUsageEnabled: false };
     expect(setThreadDetailsItem(hidden, servers, true)).toEqual({});
+  });
+
+  it("moves header items out of the card and ignores ids that cannot sit in the header", () => {
+    const settings = {
+      threadDetailsItems: {},
+      threadDetailsUsageEnabled: false,
+      threadHeaderItems: ["openIn", "servers", "retired"],
+    };
+    expect(resolveThreadHeaderItems(settings)).toMatchObject({ openIn: true, servers: false });
+    expect(resolveThreadDetailsCardItems(settings)).toMatchObject({ openIn: false, servers: true });
+
+    expect(setThreadHeaderItem(settings, openIn, false)).toEqual(["servers", "retired"]);
+    expect(setThreadHeaderItem({ threadHeaderItems: [] }, openIn, true)).toEqual(["openIn"]);
   });
 });
