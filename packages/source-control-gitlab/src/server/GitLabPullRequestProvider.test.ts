@@ -325,6 +325,7 @@ describe("merge request reads", () => {
     checks: [],
     viewerCanMerge: true,
     reviewerIds: [],
+    reviewerUsers: [],
   };
 
   const countingProvider = Effect.gen(function* () {
