@@ -279,8 +279,10 @@ access to the environment and is not available on Windows.
 
 To choose what the thread details card shows, right-click the card or open
 **Settings → Appearance → Thread details**. Hidden rows keep their keyboard
-shortcuts, such as Open in editor and project scripts. **Reset to default** brings
-back the standard rows.
+shortcuts, such as Open in editor and project scripts. Under **Show in header**,
+you can move Open in editor, project scripts, git actions, and changes into the
+chat header instead. Right-click them there to move them back. **Reset to default**
+brings back the standard rows.
 
 ## Snooze until later
 
