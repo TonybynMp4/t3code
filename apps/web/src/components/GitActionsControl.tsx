@@ -38,6 +38,7 @@ import {
   GlobeIcon,
 } from "lucide-react";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
+import { Group, GroupSeparator } from "~/components/ui/group";
 import { RadioGroup } from "~/components/ui/radio-group";
 import { Spinner } from "~/components/ui/spinner";
 import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
@@ -116,6 +117,7 @@ interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
   draftId?: DraftId;
+  displayMode?: "toolbar" | "panel";
   compact?: boolean;
   showActions?: boolean;
   showChanges?: boolean;
@@ -927,11 +929,14 @@ export default function GitActionsControl({
   gitCwd,
   activeThreadRef,
   draftId,
+  displayMode = "panel",
   compact = false,
   showActions = true,
   showChanges = true,
   onOpenChanges,
 }: GitActionsControlProps) {
+  const isPanel = displayMode === "panel";
+  const ActionGroup = isPanel ? "div" : Group;
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -1483,27 +1488,31 @@ export default function GitActionsControl({
       {!showActions ? null : !isRepo ? (
         <ThreadDetailsControl
           size="xs"
-          variant="ghost"
+          variant={isPanel ? "ghost" : "outline"}
           part="row"
-          panel
+          panel={isPanel}
           disabled={!canWriteSourceControl || initAction.isPending}
           onClick={initializeGit}
         >
           <GitBranchPlusIcon className="size-3.5" aria-hidden />
-          <span className={cn("ml-0.5", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
+          <span className={cn("ml-0.5", isPanel && THREAD_DETAILS_PANEL_LABEL_CLASS)}>
             {initAction.isPending ? "Initializing..." : "Initialize Git"}
           </span>
         </ThreadDetailsControl>
       ) : quietEmptyDraft || (compact && !gitActionProgress && !visibleInlineSuccess) ? null : (
-        <div
+        <ActionGroup
           role="group"
           aria-label="Git actions"
-          ref={panelAnchorRef}
-          className={cn(
-            "shrink-0",
-            THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
-            gitActionProgress && "bg-black/[0.035] dark:bg-white/[0.055]",
-          )}
+          {...(isPanel
+            ? {
+                ref: panelAnchorRef,
+                className: cn(
+                  "shrink-0",
+                  THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
+                  gitActionProgress && "bg-black/[0.035] dark:bg-white/[0.055]",
+                ),
+              }
+            : {})}
         >
           {gitActionProgress ? (
             <ThreadDetailsControl
@@ -1513,16 +1522,23 @@ export default function GitActionsControl({
                   : gitActionProgress.status
               }
               part="primary"
-              panel
+              panel={isPanel}
               multiline
               disabled
               size="xs"
-              variant="ghost"
+              variant={isPanel ? "ghost" : "outline"}
             >
               <GitActionProgressButtonContent progress={gitActionProgress} />
             </ThreadDetailsControl>
           ) : visibleInlineSuccess ? (
-            <ThreadDetailsControl part="primary" multiline disabled size="xs" variant="ghost">
+            <ThreadDetailsControl
+              part="primary"
+              panel={isPanel}
+              multiline
+              disabled
+              size="xs"
+              variant={isPanel ? "ghost" : "outline"}
+            >
               <GitActionSuccessButtonContent success={visibleInlineSuccess} />
             </ThreadDetailsControl>
           ) : quickActionDisabledReason ? (
@@ -1533,21 +1549,21 @@ export default function GitActionsControl({
                   <ThreadDetailsControl
                     aria-disabled="true"
                     part="primary"
-                    panel
+                    panel={isPanel}
                     size="xs"
-                    variant="ghost"
+                    variant={isPanel ? "ghost" : "outline"}
                   />
                 }
               >
                 <GitQuickActionIcon
                   quickAction={quickAction}
                   SourceControlIcon={SourceControlIcon}
-                  className={THREAD_DETAILS_PANEL_ICON_CLASS}
+                  className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
                 />
                 <span
                   className={cn(
                     "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5",
-                    cn("not-sr-only ml-0 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
+                    isPanel && cn("not-sr-only ml-0 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
                   )}
                 >
                   {quickAction.label}
@@ -1559,22 +1575,22 @@ export default function GitActionsControl({
             </Popover>
           ) : (
             <ThreadDetailsControl
-              variant="ghost"
+              variant={isPanel ? "ghost" : "outline"}
               size="xs"
               part="primary"
-              panel
+              panel={isPanel}
               disabled={!canWriteSourceControl || isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >
               <GitQuickActionIcon
                 quickAction={quickAction}
                 SourceControlIcon={SourceControlIcon}
-                className={THREAD_DETAILS_PANEL_ICON_CLASS}
+                className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
               />
               <span
                 className={cn(
                   "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5",
-                  cn("not-sr-only ml-0 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
+                  isPanel && cn("not-sr-only ml-0 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
                 )}
               >
                 {quickAction.label}
@@ -1588,7 +1604,11 @@ export default function GitActionsControl({
             />
           ) : (
             <>
-              <span aria-hidden="true" className={THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS} />
+              {isPanel ? (
+                <span aria-hidden="true" className={THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS} />
+              ) : (
+                <GroupSeparator />
+              )}
               <Menu
                 onOpenChange={(open) => {
                   if (open) {
@@ -1600,39 +1620,52 @@ export default function GitActionsControl({
                   render={
                     <ThreadDetailsControl
                       aria-label="Git action options"
-                      size="sm"
-                      variant="ghost"
+                      size={isPanel ? "sm" : "icon-xs"}
+                      variant={isPanel ? "ghost" : "outline"}
                       part="secondary"
-                      panel
+                      panel={isPanel}
                     />
                   }
                   disabled={isGitActionRunning}
                 >
                   <ChevronDownIcon
                     aria-hidden="true"
-                    className={THREAD_DETAILS_PANEL_CHEVRON_CLASS}
+                    className={isPanel ? THREAD_DETAILS_PANEL_CHEVRON_CLASS : "size-4"}
                   />
                 </MenuTrigger>
-                <MenuPopup align="end" anchor={panelAnchorRef} className="w-(--anchor-width)">
+                <MenuPopup
+                  align="end"
+                  {...(isPanel ? { anchor: panelAnchorRef, className: "w-(--anchor-width)" } : {})}
+                >
                   {gitItems}
                 </MenuPopup>
               </Menu>
             </>
           )}
-        </div>
+        </ActionGroup>
       )}
 
       {showChanges && isRepo && !quietEmptyDraft ? (
         <ThreadDetailsControl
           type="button"
-          variant="ghost"
-          size="sm"
+          variant={isPanel ? "ghost" : "outline"}
+          size={isPanel ? "sm" : "xs"}
           part="row"
+          panel={isPanel}
           disabled={!onOpenChanges}
           onClick={onOpenChanges}
         >
-          <FileDiffIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
-          <span className={cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS)}>Changes</span>
+          <FileDiffIcon
+            className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
+            aria-hidden
+          />
+          <span
+            className={
+              isPanel ? cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS) : "sr-only"
+            }
+          >
+            Changes
+          </span>
           <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
             <span
               className={
