@@ -79,7 +79,8 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
   const searchQuery = useDebouncedValue(query.trim(), 250);
-  const searchesHost = result.data?.truncated === true && searchQuery.length > 0;
+  const supportsSearch = pr?.provider === "github" || pr?.provider === "gitlab";
+  const searchesHost = supportsSearch && result.data?.truncated === true && searchQuery.length > 0;
   const searched = searchesHost && searchQuery === query.trim();
   const searchResult = useEnvironmentQuery(
     searchesHost
@@ -97,6 +98,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     ),
   ].sort((a, b) => Number(b.isRequested) - Number(a.isRequested) || a.login.localeCompare(b.login));
   const searchPending =
+    supportsSearch &&
     result.data?.truncated === true &&
     query.trim().length > 0 &&
     (searchQuery !== query.trim() || searchResult.isPending);
@@ -277,14 +279,17 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           }
           ListFooterComponent={
             result.data?.truncated &&
-            (query.trim().length === 0 ||
+            (!supportsSearch ||
+              query.trim().length === 0 ||
               (searched && (searchResult.error !== null || searchResult.data?.truncated))) ? (
               <Text className="px-4 py-4 text-xs text-foreground-muted">
-                {searched && searchResult.error
-                  ? `Only listed reviewers are matched: the provider search failed. ${searchResult.error}`
-                  : searched
-                    ? "More reviewers match than the provider returned. Keep typing to narrow it down."
-                    : "The provider has more reviewers than are listed here. Search to find them."}
+                {!supportsSearch
+                  ? "The provider has more reviewers than are listed here. Find additional reviewers on the provider."
+                  : searched && searchResult.error
+                    ? `Only listed reviewers are matched: the provider search failed. ${searchResult.error}`
+                    : searched
+                      ? "More reviewers match than the provider returned. Keep typing to narrow it down."
+                      : "The provider has more reviewers than are listed here. Search to find them."}
               </Text>
             ) : undefined
           }

@@ -3,6 +3,7 @@ import type {
   EnvironmentId,
   PullRequestRef,
   PullRequestReviewerCandidate,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { mergeReviewerCandidates } from "@t3tools/client-runtime/pull-request-reviewers";
 import { CheckIcon, UserPlusIcon } from "lucide-react";
@@ -22,10 +23,12 @@ export function PullRequestReviewerPicker({
   environmentId,
   reference,
   allowed,
+  provider,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   allowed: boolean;
+  provider: SourceControlProviderKind;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -36,7 +39,9 @@ export function PullRequestReviewerPicker({
   );
   // Past the first page the host is asked, since what was loaded cannot answer for the rest.
   const searchQuery = useDebouncedValue(query.trim(), 250);
-  const searchesHost = candidatesQuery.data?.truncated === true && searchQuery.length > 0;
+  const supportsSearch = provider === "github" || provider === "gitlab";
+  const searchesHost =
+    supportsSearch && candidatesQuery.data?.truncated === true && searchQuery.length > 0;
   // Only once the debounce has caught up, or rows matching the previous text would linger.
   const searched = searchesHost && searchQuery === query.trim();
   const searchResult = useEnvironmentQuery(
@@ -108,6 +113,7 @@ export function PullRequestReviewerPicker({
         (candidatesQuery.isPending && candidatesQuery.data === null) ||
         // Nothing loaded matches yet, and the host has not answered: not a "nobody matches".
         (candidates.length === 0 &&
+          supportsSearch &&
           candidatesQuery.data?.truncated === true &&
           query.trim().length > 0 &&
           (searchQuery !== query.trim() || searchResult.isPending))
@@ -125,15 +131,18 @@ export function PullRequestReviewerPicker({
       errorLabel="The people with access could not be read."
       truncated={
         candidatesQuery.data?.truncated === true &&
-        (query.trim().length === 0 ||
+        (!supportsSearch ||
+          query.trim().length === 0 ||
           (searched && (searchResult.error !== null || searchResult.data?.truncated === true)))
       }
       truncatedLabel={
-        searched && searchResult.error !== null
-          ? `Only the people already listed are matched: the host search failed. ${searchResult.error}`
-          : searched
-            ? "More people match than the host returned. Keep typing to narrow it down."
-            : "This repository has more people with access than are listed here. Search to find them."
+        !supportsSearch
+          ? "The provider has more reviewers than are listed here. Find additional reviewers on the provider."
+          : searched && searchResult.error !== null
+            ? `Only the people already listed are matched: the host search failed. ${searchResult.error}`
+            : searched
+              ? "More people match than the host returned. Keep typing to narrow it down."
+              : "This repository has more people with access than are listed here. Search to find them."
       }
       candidateKey={(candidate) => `${candidate.kind}:${candidate.id}`}
       disabled={pending !== null}
