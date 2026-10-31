@@ -359,8 +359,10 @@ export function showContextMenuFallback<T extends string>(
           return;
         case "Enter":
         case " ":
-          isKeyboardDriven = true;
-          return;
+          // Keyboard activation must not depend on the opening pointer gesture's frame.
+          canDismissFromPointer = true;
+          items[focusedIndex]?.click();
+          break;
         default:
           return;
       }
