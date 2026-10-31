@@ -280,6 +280,14 @@ const RunContextSelector = memo(function RunContextSelector({
         data-composer-context-control
       >
         {triggerContent}
+        {/* A started thread can't change either, so the strip names both. */}
+        {!isPanel && showEnvironmentIndicator && !autoEnvironmentLabel ? (
+          <>
+            <Separator orientation="vertical" className="mx-0.5 h-3.5!" />
+            {workspaceIcon}
+            <ComposerContextLabel>{workspaceLabel}</ComposerContextLabel>
+          </>
+        ) : null}
       </span>
     );
   }
@@ -684,10 +692,13 @@ export const BranchToolbar = memo(function BranchToolbar({
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
   // Started threads get no handler but still show which machine they run on,
   // matching the strip visibility ChatView computes from the same inputs.
-  const showEnvironmentIndicator = shouldShowEnvironmentIndicator({
-    activeEnvironment: activeEnvironmentOption,
-    canPickEnvironment: hasMultipleEnvironments,
-  });
+  // A started thread's strip only shows when the user keeps it, so it always names the machine.
+  const showEnvironmentIndicator =
+    (isServerThread && activeEnvironmentOption !== null) ||
+    shouldShowEnvironmentIndicator({
+      activeEnvironment: activeEnvironmentOption,
+      canPickEnvironment: hasMultipleEnvironments,
+    });
   const [attachStrip, labelsOverflow] = useLabelsOverflow();
 
   if (!activeProject) return null;
