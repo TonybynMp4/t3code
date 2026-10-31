@@ -70,43 +70,41 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     return null;
   });
 
-  const recreateMissingWorktree = Effect.fn("ProviderTurnStartService.recreateMissingWorktree")(
-    function* (input: {
-      readonly cwd: string;
-      readonly worktreePath: string;
-      readonly branch: string;
-    }) {
-      const { cwd, worktreePath, branch } = input;
-      yield* gitWorkflow.pruneWorktrees({ cwd });
-      const localBranchNames = yield* gitWorkflow.listLocalBranchNames(cwd);
-      if (localBranchNames.includes(branch)) {
-        yield* gitWorkflow.createWorktree({ cwd, refName: branch, path: worktreePath });
-        return;
-      }
-      // Push keeps the tracking ref current, so recovery reads it without fetching.
-      const pushedRef = `refs/remotes/origin/${branch}`;
-      if (yield* gitWorkflow.hasCommit({ cwd, refName: pushedRef })) {
-        yield* gitWorkflow.createWorktree({
-          cwd,
-          refName: pushedRef,
-          newRefName: branch,
-          path: worktreePath,
-        });
-        return;
-      }
-      const base = yield* resolveRecreateBase(cwd);
-      if (base === null) {
-        return yield* new WorktreeRecreateNoBaseError({ worktreePath, branch });
-      }
+  const recreateMissingWorktree = Effect.fn("restoreMissingWorktree.recreate")(function* (input: {
+    readonly cwd: string;
+    readonly worktreePath: string;
+    readonly branch: string;
+  }) {
+    const { cwd, worktreePath, branch } = input;
+    yield* gitWorkflow.pruneWorktrees({ cwd });
+    const localBranchNames = yield* gitWorkflow.listLocalBranchNames(cwd);
+    if (localBranchNames.includes(branch)) {
+      yield* gitWorkflow.createWorktree({ cwd, refName: branch, path: worktreePath });
+      return;
+    }
+    // Push keeps the tracking ref current, so recovery reads it without fetching.
+    const pushedRef = `refs/remotes/origin/${branch}`;
+    if (yield* gitWorkflow.hasCommit({ cwd, refName: pushedRef })) {
       yield* gitWorkflow.createWorktree({
         cwd,
-        refName: base.refName,
+        refName: pushedRef,
         newRefName: branch,
-        ...(base.baseRefName === undefined ? {} : { baseRefName: base.baseRefName }),
         path: worktreePath,
       });
-    },
-  );
+      return;
+    }
+    const base = yield* resolveRecreateBase(cwd);
+    if (base === null) {
+      return yield* new WorktreeRecreateNoBaseError({ worktreePath, branch });
+    }
+    yield* gitWorkflow.createWorktree({
+      cwd,
+      refName: base.refName,
+      newRefName: branch,
+      ...(base.baseRefName === undefined ? {} : { baseRefName: base.baseRefName }),
+      path: worktreePath,
+    });
+  });
 
   return Effect.fn("restoreMissingWorktree")(function* (thread: WorktreeThread) {
     const { worktreePath, branch } = thread;
@@ -134,41 +132,43 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
 });
 
 // Worktree setup uses terminals, so recovery must stay outside TerminalManager.
-export const makeWithWorktreeRecovery = Effect.fn("makeRetryAfterRestoringWorktree")(function* <
-  LookupError,
->(getThreadShell: (threadId: ThreadId) => Effect.Effect<WorktreeThread | null, LookupError>) {
-  const path = yield* Path.Path;
-  const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
-  return Effect.fn("restoreMissingWorktree.retryLaunch")(function* <
-    Input extends {
-      readonly threadId: string;
-      readonly cwd?: string | undefined;
-      readonly worktreePath?: string | null | undefined;
-    },
-    A,
-    E,
-    R,
-  >(input: Input, launch: (input: Input) => Effect.Effect<A, E, R>) {
-    const thread = yield* getThreadShell(ThreadId.make(input.threadId)).pipe(
-      Effect.orElseSucceed(() => null),
-    );
-    if (thread?.worktreePath == null) return yield* launch(input);
-    const relative = path.relative(thread.worktreePath, input.cwd ?? thread.worktreePath);
-    if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
-      return yield* launch(input);
-    }
-    return yield* launch({ ...input, worktreePath: thread.worktreePath }).pipe(
-      Effect.provideService(TerminalCwdRecovery, (error) =>
-        restoreMissingWorktree(thread).pipe(
-          Effect.catch((cause) =>
-            Effect.logWarning("failed to recreate missing worktree", {
-              threadId: thread.id,
-              worktreePath: thread.worktreePath,
-              cause,
-            }).pipe(Effect.andThen(Effect.fail(error))),
+export const makeWithWorktreeRecovery = Effect.fn("restoreMissingWorktree.makeWithRecovery")(
+  function* <LookupError>(
+    getThreadShell: (threadId: ThreadId) => Effect.Effect<WorktreeThread | null, LookupError>,
+  ) {
+    const path = yield* Path.Path;
+    const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
+    return Effect.fn("restoreMissingWorktree.retryLaunch")(function* <
+      Input extends {
+        readonly threadId: string;
+        readonly cwd?: string | undefined;
+        readonly worktreePath?: string | null | undefined;
+      },
+      A,
+      E,
+      R,
+    >(input: Input, launch: (input: Input) => Effect.Effect<A, E, R>) {
+      const thread = yield* getThreadShell(ThreadId.make(input.threadId)).pipe(
+        Effect.orElseSucceed(() => null),
+      );
+      if (thread?.worktreePath == null) return yield* launch(input);
+      const relative = path.relative(thread.worktreePath, input.cwd ?? thread.worktreePath);
+      if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
+        return yield* launch(input);
+      }
+      return yield* launch({ ...input, worktreePath: thread.worktreePath }).pipe(
+        Effect.provideService(TerminalCwdRecovery, (error) =>
+          restoreMissingWorktree(thread).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("failed to recreate missing worktree", {
+                threadId: thread.id,
+                worktreePath: thread.worktreePath,
+                cause,
+              }).pipe(Effect.andThen(Effect.fail(error))),
+            ),
           ),
         ),
-      ),
-    );
-  });
-});
+      );
+    });
+  },
+);
