@@ -688,13 +688,10 @@ export const BranchToolbar = memo(function BranchToolbar({
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
   // Started threads get no handler but still show which machine they run on,
   // matching the strip visibility ChatView computes from the same inputs.
-  // A started thread's strip only shows when the user keeps it, so it always names the machine.
-  const showEnvironmentIndicator =
-    (isServerThread && activeEnvironmentOption !== null) ||
-    shouldShowEnvironmentIndicator({
-      activeEnvironment: activeEnvironmentOption,
-      canPickEnvironment: hasMultipleEnvironments,
-    });
+  const showEnvironmentIndicator = shouldShowEnvironmentIndicator({
+    activeEnvironment: activeEnvironmentOption,
+    canPickEnvironment: hasMultipleEnvironments,
+  });
   const [attachStrip, labelsOverflow] = useLabelsOverflow();
 
   if (!activeProject) return null;
@@ -820,11 +817,13 @@ export const BranchToolbar = memo(function BranchToolbar({
         </div>
       ) : null}
 
+      {/* The branch sits on the right at every width, as on a new thread. */}
+      <span aria-hidden className="flex-1" />
       {showGitControls ? (
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
-          className="min-w-0 flex-initial justify-end @xl/composer-surface:ml-auto"
+          className="min-w-0 flex-initial justify-end"
           environmentId={environmentId}
           threadId={threadId}
           {...(draftId ? { draftId } : {})}
