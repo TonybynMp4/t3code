@@ -3335,8 +3335,8 @@ export default function ChatView(props: ChatViewProps) {
             <div
               className={cn(
                 "@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-                // Clears the window's fixed panel toggles.
-                inlineRightPanelOwnsTitleBar ? "pr-10" : "pr-24",
+                // Clears the fixed panel toggles, which grow to 32px below sm.
+                inlineRightPanelOwnsTitleBar ? "pr-10" : "pr-28 sm:pr-24",
               )}
             >
               <ChatHeader
