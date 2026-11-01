@@ -206,9 +206,6 @@ const layerCheckpointCaptureServiceProvided = CheckpointCaptureService.layer.pip
     ),
   ),
 );
-const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
-  Layer.provide(Layer.merge(layerCheckpointCaptureServiceProvided, ProjectionStore.layer)),
-);
 
 const layerOrchestratorProvided = Orchestrator.layer.pipe(
   Layer.provide(
@@ -312,6 +309,15 @@ const layerProviderContinuationWorkerProvided = ProviderContinuationService.laye
 const layerThreadTitleRegenerationProvided = ThreadTitleRegenerationService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(layerThreadManagementProvided, ProjectStore.layer, TextGeneration.layer),
+  ),
+);
+const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerCheckpointCaptureServiceProvided,
+      ProjectionStore.layer,
+      layerThreadManagementProvided,
+    ),
   ),
 );
 const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(

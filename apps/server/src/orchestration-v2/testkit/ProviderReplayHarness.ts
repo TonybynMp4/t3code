@@ -443,9 +443,6 @@ export function layerWithRegistry<Error>(
       ),
     ),
   );
-  const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
-    Layer.provide(Layer.merge(layerCheckpointCaptureServiceProvided, layerStores)),
-  );
   const layerThreadTitleRegenerationTest = Layer.succeed(
     ThreadTitleRegenerationService.ThreadTitleRegenerationService,
     ThreadTitleRegenerationService.ThreadTitleRegenerationService.of({
@@ -496,6 +493,15 @@ export function layerWithRegistry<Error>(
           ),
         )
       : Layer.empty;
+  const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerCheckpointCaptureServiceProvided,
+        layerStores,
+        layerThreadManagementProvided,
+      ),
+    ),
+  );
   const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
     Layer.provide(
       Layer.mergeAll(
