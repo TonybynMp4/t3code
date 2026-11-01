@@ -312,7 +312,7 @@ export default function ProjectScriptsControl({
                 {primaryScript.name}
               </span>
             </TooltipTrigger>
-            <TooltipPopup side="top">
+            <TooltipPopup side={isPanel ? "top" : "bottom"}>
               {onRunScript
                 ? `Run ${primaryScript.name}`
                 : "Pair this client again with permission to run terminal commands."}

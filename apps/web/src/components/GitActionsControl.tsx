@@ -1574,28 +1574,37 @@ export default function GitActionsControl({
               </PopoverPopup>
             </Popover>
           ) : (
-            <ThreadDetailsControl
-              variant={isPanel ? "ghost" : "outline"}
-              size="xs"
-              part="primary"
-              panel={isPanel}
-              disabled={!canWriteSourceControl || isGitActionRunning || quickAction.disabled}
-              onClick={runQuickAction}
-            >
-              <GitQuickActionIcon
-                quickAction={quickAction}
-                SourceControlIcon={SourceControlIcon}
-                className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
-              />
-              <span
-                className={cn(
-                  "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5",
-                  isPanel && cn("not-sr-only ml-0 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
-                )}
+            <Tooltip disabled={isPanel}>
+              <TooltipTrigger
+                render={
+                  <ThreadDetailsControl
+                    variant={isPanel ? "ghost" : "outline"}
+                    size="xs"
+                    part="primary"
+                    panel={isPanel}
+                    disabled={!canWriteSourceControl || isGitActionRunning || quickAction.disabled}
+                    // Tooltip replaces the button data-slot, so toolbar theming needs a separate hook.
+                    data-toolbar-control=""
+                    onClick={runQuickAction}
+                  />
+                }
               >
-                {quickAction.label}
-              </span>
-            </ThreadDetailsControl>
+                <GitQuickActionIcon
+                  quickAction={quickAction}
+                  SourceControlIcon={SourceControlIcon}
+                  className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
+                />
+                <span
+                  className={cn(
+                    "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5",
+                    isPanel && cn("not-sr-only ml-0 truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
+                  )}
+                >
+                  {quickAction.label}
+                </span>
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">{quickAction.label}</TooltipPopup>
+            </Tooltip>
           )}
           {gitActionProgress ? (
             <GitActionElapsedTime
@@ -1646,45 +1655,55 @@ export default function GitActionsControl({
       )}
 
       {showChanges && isRepo && !quietEmptyDraft ? (
-        <ThreadDetailsControl
-          type="button"
-          variant={isPanel ? "ghost" : "outline"}
-          size={isPanel ? "sm" : "xs"}
-          part="row"
-          panel={isPanel}
-          disabled={!onOpenChanges}
-          onClick={onOpenChanges}
-        >
-          <FileDiffIcon
-            className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
-            aria-hidden
-          />
-          <span
-            className={
-              isPanel ? cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS) : "sr-only"
+        <Tooltip disabled={isPanel}>
+          <TooltipTrigger
+            render={
+              <ThreadDetailsControl
+                type="button"
+                variant={isPanel ? "ghost" : "outline"}
+                size={isPanel ? "sm" : "xs"}
+                part="row"
+                panel={isPanel}
+                disabled={!onOpenChanges}
+                data-toolbar-control=""
+                onClick={onOpenChanges}
+              />
             }
           >
-            Changes
-          </span>
-          <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
+            <FileDiffIcon
+              className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3.5"}
+              aria-hidden
+            />
             <span
               className={
-                changesTotals?.insertions
-                  ? "text-diff-addition-foreground"
-                  : "text-muted-foreground"
+                isPanel ? cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS) : "sr-only"
               }
             >
-              +{formatDiffCount(changesTotals?.insertions ?? 0)}
+              Changes
             </span>
-            <span
-              className={
-                changesTotals?.deletions ? "text-diff-deletion-foreground" : "text-muted-foreground"
-              }
-            >
-              -{formatDiffCount(changesTotals?.deletions ?? 0)}
+            <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
+              <span
+                className={
+                  changesTotals?.insertions
+                    ? "text-diff-addition-foreground"
+                    : "text-muted-foreground"
+                }
+              >
+                +{formatDiffCount(changesTotals?.insertions ?? 0)}
+              </span>
+              <span
+                className={
+                  changesTotals?.deletions
+                    ? "text-diff-deletion-foreground"
+                    : "text-muted-foreground"
+                }
+              >
+                -{formatDiffCount(changesTotals?.deletions ?? 0)}
+              </span>
             </span>
-          </span>
-        </ThreadDetailsControl>
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">View changes</TooltipPopup>
+        </Tooltip>
       ) : null}
 
       <Dialog
