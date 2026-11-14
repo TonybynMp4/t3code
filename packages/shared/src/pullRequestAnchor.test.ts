@@ -141,10 +141,9 @@ it("reads GitLab file and line anchors, letting a removed old line win", () => {
   expect(parsePullRequestAnchor(`${gitlab}/diffs#line_${digest.slice(0, 9)}_12`)).toEqual(
     diff(line(12, "left"), digest.slice(0, 9)),
   );
-  expect(parsePullRequestAnchor(`${gitlab}#${digest}_1_1`)).toEqual({
-    kind: "summary",
-    anchor: `${digest}_1_1`,
-  });
+  expect(parsePullRequestAnchor(`${gitlab}#${digest}_248_253`)).toEqual(code);
+  expect(parsePullRequestAnchor(`${gitlab}#${digest}`)).toEqual(diff(null));
+  expect(parsePullRequestAnchor(`${gitlab}?file=${digest}`)).toBeNull();
 });
 
 it.each([

@@ -117,9 +117,12 @@ export function parsePullRequestAnchor(url: string | null | undefined): PullRequ
   }
   const fallback = pullRequestPathTab(parsed.pathname);
   const anchor = pullRequestUrlHash(url);
-  const gitLab = /\/-\/merge_requests\/\d+\/diffs\/?$/i.test(parsed.pathname)
-    ? gitLabDiffAnchor(anchor, parsed.searchParams.get("file"))
-    : null;
+  const gitLab = gitLabDiffAnchor(
+    anchor,
+    /\/-\/merge_requests\/\d+\/diffs\/?$/i.test(parsed.pathname)
+      ? parsed.searchParams.get("file")
+      : null,
+  );
   if (gitLab) return gitLab;
   if (!anchor) return fallback;
   // GitHub line ranges may cross diff sides; file digests were MD5 before SHA-256.
