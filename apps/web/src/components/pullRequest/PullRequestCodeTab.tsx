@@ -15,7 +15,6 @@ import type {
   SelectedLineRange,
 } from "@pierre/diffs";
 import type { CodeViewAnnotationArgs, CodeViewDiffItem } from "@pierre/diffs/react";
-import type { FileDiffMetadata } from "@pierre/diffs/types";
 import type {
   EnvironmentId,
   PullRequestDetailView,
